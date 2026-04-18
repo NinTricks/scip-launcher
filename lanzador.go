@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	DirectorioInstancias   = "./miplib"
-	LimiteTiempo           = "7200"
-	MaxProcesosSimultaneos = 20
+	DirectorioInstancias   = "./problemas"
+	LimiteTiempo           = "200"
+	MaxProcesosSimultaneos = 28
 )
 
 var ModosValidos = []string{"default", "agresivo", "sin_heuristicas"}
@@ -59,6 +59,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Separa el flag --secuencial del resto de argumentos.
+	secuencial := false
+	var argsRestantes []string
+	for _, arg := range os.Args[1:] {
+		if arg == "--secuencial" {
+			secuencial = true
+		} else {
+			argsRestantes = append(argsRestantes, arg)
+		}
+	}
+
 	// Filtra modos si el usuario los pasa como argumento, si no ejecuta todos.
 	modos := ModosValidos
 	if len(os.Args) > 1 {
@@ -77,7 +88,7 @@ func main() {
 	// Ejecuta cada modo en secuencia (los problemas dentro de cada modo van en paralelo).
 	for _, modo := range modos {
 		fmt.Printf("\n▶ Iniciando modo: %s\n", strings.ToUpper(modo))
-		ejecutarBateria(archivos, modo)
+		ejecutarBateria(archivos, modo, secuencial)
 	}
 
 	fmt.Println("\n--- Batería de pruebas finalizada ---")
@@ -119,9 +130,12 @@ func deduplicar(s []string) []string {
 // Ejecución paralela de una batería
 // ─────────────────────────────────────────────
 
-func ejecutarBateria(archivos []string, modo string) []ResultadoProblema {
+func ejecutarBateria(archivos []string, modo string, secuencial bool) []ResultadoProblema {
 	numCPU := runtime.NumCPU()
 	workers := MaxProcesosSimultaneos
+	if secuencial {
+		workers = 1
+	}
 	if workers > numCPU/2 {
 		workers = numCPU / 2
 	}
@@ -138,7 +152,7 @@ func ejecutarBateria(archivos []string, modo string) []ResultadoProblema {
 		go func(workerID, cpu int) {
 			defer wg.Done()
 			for archivo := range tareas {
-				res := ejecutarTarea(workerID, cpu*2, archivo, modo)
+				res := ejecutarTarea(workerID, cpu*2, archivo, modo, secuencial)
 				resultadosCh <- res
 			}
 		}(id, cpuID)
@@ -165,15 +179,22 @@ func ejecutarBateria(archivos []string, modo string) []ResultadoProblema {
 // Tarea individual
 // ─────────────────────────────────────────────
 
-func ejecutarTarea(workerID, cpuID int, rutaArchivo, modo string) ResultadoProblema {
+func ejecutarTarea(workerID, cpuID int, rutaArchivo, modo string, secuencial bool) ResultadoProblema {
 	nombreArchivo := filepath.Base(rutaArchivo)
 	resultado := ResultadoProblema{Archivo: nombreArchivo, Modo: modo}
 
-	cmd := exec.Command(
-		"taskset", "-c", strconv.Itoa(cpuID),
-		"hugectl", "--heap",
-		"python", "scip.py", rutaArchivo, LimiteTiempo, modo,
-	)
+	var cmd *exec.Cmd
+	if secuencial {
+		cmd = exec.Command(
+			"python", "scip.py", rutaArchivo, LimiteTiempo, modo,
+		)
+	} else {
+		cmd = exec.Command(
+			"taskset", "-c", strconv.Itoa(cpuID),
+			"hugectl", "--heap",
+			"python", "scip.py", rutaArchivo, LimiteTiempo, modo,
+		)
+	}
 
 	salida, err := cmd.CombinedOutput()
 	if err != nil {

@@ -20,6 +20,7 @@ if os.path.exists(NOMBRE_LOG):
     os.remove(NOMBRE_LOG)
 
 model = Model()
+model.setParam("limits/memory", 92160)  # 90 GB 
 model.readProblem(NOMBRE_PROBLEMA)
 model.setLogfile(NOMBRE_LOG)
 if LIMITE_TIEMPO != 0:
