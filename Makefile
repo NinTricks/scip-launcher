@@ -1,5 +1,5 @@
 BINARY = lanzador
-SRC = lanzador3.go
+SRC = lanzador.go
 
 .PHONY: all build clean
 

@@ -48,24 +48,6 @@ type ResultadoProblema struct {
 	Heuristicas []HeuristicaStat
 }
 
-// ResumenModo agrega los resultados de todos los problemas para un modo.
-type ResumenModo struct {
-	Modo              string
-	Total             int
-	Resueltos         int
-	TiempoTotal       float64
-	HeuristicasGlobal map[string]*HeuristicaStat
-	PrimerasSol       map[string]int
-}
-
-func nuevoResumen(modo string) *ResumenModo {
-	return &ResumenModo{
-		Modo:              modo,
-		HeuristicasGlobal: make(map[string]*HeuristicaStat),
-		PrimerasSol:       make(map[string]int),
-	}
-}
-
 // ─────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────
@@ -93,15 +75,11 @@ func main() {
 		len(archivos), strings.Join(modos, ", "), MaxProcesosSimultaneos)
 
 	// Ejecuta cada modo en secuencia (los problemas dentro de cada modo van en paralelo).
-	resumenes := make(map[string]*ResumenModo, len(modos))
 	for _, modo := range modos {
 		fmt.Printf("\n▶ Iniciando modo: %s\n", strings.ToUpper(modo))
-		resultados := ejecutarBateria(archivos, modo)
-		resumenes[modo] = agregar(resultados, modo)
-        //guardarResumenModo(resumenes[modo])
+		ejecutarBateria(archivos, modo)
 	}
 
-	//imprimirComparativa(resumenes, modos, archivos)
 	fmt.Println("\n--- Batería de pruebas finalizada ---")
 }
 
@@ -145,7 +123,7 @@ func ejecutarBateria(archivos []string, modo string) []ResultadoProblema {
 	numCPU := runtime.NumCPU()
 	workers := MaxProcesosSimultaneos
 	if workers > numCPU/2 {
-		workers = numCPU/2
+		workers = numCPU / 2
 	}
 
 	tareas := make(chan string, len(archivos))
@@ -154,9 +132,9 @@ func ejecutarBateria(archivos []string, modo string) []ResultadoProblema {
 	var wg sync.WaitGroup
 	for id := 0; id < workers; id++ {
 		wg.Add(1)
-		cpuID := id % (numCPU/2) // garantiza que el ID de CPU es siempre válido
-                                 // tira por las CPUS pares (intención de mejorar
-                                 // fallos en cache
+		cpuID := id % (numCPU / 2) // garantiza que el ID de CPU es siempre válido
+		// tira por las CPUS pares (intención de mejorar
+		// fallos en cache
 		go func(workerID, cpu int) {
 			defer wg.Done()
 			for archivo := range tareas {
@@ -317,148 +295,6 @@ func parsearHeuristicas(texto string) []HeuristicaStat {
 		})
 	}
 	return heurísticas
-}
-
-// ─────────────────────────────────────────────
-// Agregación
-// ─────────────────────────────────────────────
-
-func agregar(resultados []ResultadoProblema, modo string) *ResumenModo {
-	res := nuevoResumen(modo)
-	for _, r := range resultados {
-		res.Total++
-		res.TiempoTotal += r.TiempoTotal
-		if r.Estado == "optimal" {
-			res.Resueltos++
-		}
-		if r.PrimeraSol != "" {
-			res.PrimerasSol[r.PrimeraSol]++
-		}
-		for _, h := range r.Heuristicas {
-			g, ok := res.HeuristicasGlobal[h.Nombre]
-			if !ok {
-				g = &HeuristicaStat{Nombre: h.Nombre}
-				res.HeuristicasGlobal[h.Nombre] = g
-			}
-			g.ExecTime += h.ExecTime
-			g.Calls += h.Calls
-			g.Found += h.Found
-			g.Best += h.Best
-		}
-	}
-	return res
-}
-
-// ─────────────────────────────────────────────
-// Salida TODO: me sobra todo de salidas de resumen, luego parsearé a lo bestia
-// ─────────────────────────────────────────────
-
-func guardarResumenModo(res *ResumenModo) {
-	var sb strings.Builder
-	escribirResumenModo(&sb, res)
-	nombre := fmt.Sprintf("resumen_%s.txt", res.Modo)
-	if err := os.WriteFile(nombre, []byte(sb.String()), 0644); err != nil {
-		fmt.Printf("Error guardando %s: %v\n", nombre, err)
-	} else {
-		fmt.Printf("Resumen guardado en %s\n", nombre)
-	}
-}
-
-func escribirResumenModo(sb *strings.Builder, res *ResumenModo) {
-	sep := strings.Repeat("─", 65)
-	sb.WriteString(fmt.Sprintf("\n%s\n", sep))
-	sb.WriteString(fmt.Sprintf(" RESUMEN — MODO: %s\n", strings.ToUpper(res.Modo)))
-	sb.WriteString(fmt.Sprintf("%s\n", sep))
-	sb.WriteString(fmt.Sprintf("  Problemas procesados : %d\n", res.Total))
-	sb.WriteString(fmt.Sprintf("  Óptimos encontrados  : %d (%.1f%%)\n",
-		res.Resueltos, porcentaje(res.Resueltos, res.Total)))
-	sb.WriteString(fmt.Sprintf("  No resueltos         : %d\n", res.Total-res.Resueltos))
-	sb.WriteString(fmt.Sprintf("  Tiempo total acum.   : %.2f s\n", res.TiempoTotal))
-
-	sb.WriteString("\n  Heurísticas primales (agregado):\n")
-	sb.WriteString(fmt.Sprintf("  %-25s %10s %8s %8s %8s\n", "Heurística", "ExecTime", "Calls", "Found", "Best"))
-	sb.WriteString("  " + strings.Repeat("─", 63) + "\n")
-
-	nombres := sortedKeys(res.HeuristicasGlobal)
-	for _, nombre := range nombres {
-		h := res.HeuristicasGlobal[nombre]
-		if h.Calls == 0 && h.Found == 0 {
-			continue
-		}
-		sb.WriteString(fmt.Sprintf("  %-25s %10.2f %8d %8d %8d\n",
-			h.Nombre, h.ExecTime, h.Calls, h.Found, h.Best))
-	}
-
-	sb.WriteString("\n  Primera solución encontrada por heurística:\n")
-	for heur, count := range res.PrimerasSol {
-		sb.WriteString(fmt.Sprintf("    %-25s : %d problemas\n", heur, count))
-	}
-}
-
-// imprimirComparativa genera la tabla cruzada modos × métricas.
-func imprimirComparativa(resumenes map[string]*ResumenModo, modos []string, archivos []string) {
-	var sb strings.Builder
-	sep := strings.Repeat("═", 75)
-
-	sb.WriteString(fmt.Sprintf("\n%s\n", sep))
-	sb.WriteString(" TABLA COMPARATIVA ENTRE MODOS\n")
-	sb.WriteString(fmt.Sprintf("%s\n\n", sep))
-
-	// Cabecera
-	sb.WriteString(fmt.Sprintf("  %-22s", "Métrica"))
-	for _, m := range modos {
-		sb.WriteString(fmt.Sprintf(" %15s", m))
-	}
-	sb.WriteString("\n  " + strings.Repeat("─", 22+15*len(modos)) + "\n")
-
-	// Filas
-	filas := []struct {
-		label string
-		fn    func(*ResumenModo) string
-	}{
-		{"Instancias", func(r *ResumenModo) string { return strconv.Itoa(r.Total) }},
-		{"Óptimos", func(r *ResumenModo) string {
-			return fmt.Sprintf("%d (%.0f%%)", r.Resueltos, porcentaje(r.Resueltos, r.Total))
-		}},
-		{"No resueltos", func(r *ResumenModo) string { return strconv.Itoa(r.Total - r.Resueltos) }},
-		{"Tiempo acum. (s)", func(r *ResumenModo) string { return fmt.Sprintf("%.2f", r.TiempoTotal) }},
-		{"Tiempo medio (s)", func(r *ResumenModo) string {
-			if r.Total == 0 {
-				return "-"
-			}
-			return fmt.Sprintf("%.2f", r.TiempoTotal/float64(r.Total))
-		}},
-	}
-
-	for _, fila := range filas {
-		sb.WriteString(fmt.Sprintf("  %-22s", fila.label))
-		for _, m := range modos {
-			if res, ok := resumenes[m]; ok {
-				sb.WriteString(fmt.Sprintf(" %15s", fila.fn(res)))
-			} else {
-				sb.WriteString(fmt.Sprintf(" %15s", "-"))
-			}
-		}
-		sb.WriteString("\n")
-	}
-
-	// Heurísticas: best encontrado por modo
-	sb.WriteString("\n  Heurística más efectiva (por Best):\n")
-	for _, m := range modos {
-		if res, ok := resumenes[m]; ok {
-			mejor := mejorHeuristica(res.HeuristicasGlobal)
-			sb.WriteString(fmt.Sprintf("    %-18s → %s\n", m, mejor))
-		}
-	}
-
-	comparativa := sb.String()
-	fmt.Print(comparativa)
-
-	if err := os.WriteFile("comparativa.txt", []byte(comparativa), 0644); err != nil {
-		fmt.Printf("Error guardando comparativa.txt: %v\n", err)
-	} else {
-		fmt.Println("Comparativa guardada en comparativa.txt")
-	}
 }
 
 // ─────────────────────────────────────────────
