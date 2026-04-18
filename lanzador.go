@@ -15,7 +15,7 @@ import (
 
 const (
 	DirectorioInstancias   = "./problemas"
-	LimiteTiempo           = "200"
+	LimiteTiempo           = "86400"
 	MaxProcesosSimultaneos = 28
 )
 
@@ -72,14 +72,15 @@ func main() {
 
 	// Filtra modos si el usuario los pasa como argumento, si no ejecuta todos.
 	modos := ModosValidos
-	if len(os.Args) > 1 {
-		for _, arg := range os.Args[1:] {
+	if len(argsRestantes) > 0 {
+		for _, arg := range argsRestantes {
 			if !modoValido(arg) {
 				fmt.Printf("Modo '%s' no reconocido. Disponibles: %s\n", arg, strings.Join(ModosValidos, " | "))
+				fmt.Println("Flag opcional: --secuencial  (1 worker, sin taskset/hugectl)")
 				os.Exit(1)
 			}
 		}
-		modos = os.Args[1:]
+		modos = argsRestantes
 	}
 
 	fmt.Printf("Instancias: %d | Modos: %s | Workers: %d\n",
