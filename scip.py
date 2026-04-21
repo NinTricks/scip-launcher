@@ -2,17 +2,34 @@ from pyscipopt import *
 import sys
 import os
 
+class PrimeraSolucionHandler(Eventhdlr):
+    
+    def eventinit(self):
+        # Suscribirse al evento de mejor solución encontrada
+        self.model.catchEvent(SCIP_EVENTTYPE.BESTSOLFOUND, self)
+    
+    def eventexit(self):
+        self.model.dropEvent(SCIP_EVENTTYPE.BESTSOLFOUND, self)
+    
+    def eventexec(self, event):
+        # Solo actuar en la primera solución
+        if self.model.getNSols() == 1:
+            print("Primera solución encontrada! Cambiando a configuración OPTIMALITY...")
+            self.model.setHeuristics(SCIP_PARAMSETTING.DEFAULT)
+            self.model.setSeparating(SCIP_PARAMSETTING.DEFAULT)
+            self.model.setPresolve(SCIP_PARAMSETTING.DEFAULT)
+
 if len(sys.argv) < 3:
     print("Error en los parametros: archivo tiempo [modo]")
-    print("  modos: default | agresivo | sin_heuristicas")
+    print("  modos: default | agresivo | sin_heuristicas | inteligente")
     sys.exit(1)
 
 NOMBRE_PROBLEMA = sys.argv[1]
 LIMITE_TIEMPO = float(sys.argv[2])
 MODO = sys.argv[3] if len(sys.argv) > 3 else "default"
 
-if MODO not in ("default", "agresivo", "sin_heuristicas"):
-    print(f"Modo '{MODO}' no reconocido. Usa: default | agresivo | sin_heuristicas")
+if MODO not in ("default", "agresivo", "sin_heuristicas", "inteligente"):
+    print(f"Modo '{MODO}' no reconocido. Usa: default | agresivo | sin_heuristicas | inteligente")
     sys.exit(1)
 
 NOMBRE_LOG = NOMBRE_PROBLEMA.split('.')[0] + f"_{MODO}_resultado.log"
@@ -32,7 +49,14 @@ if MODO == "agresivo":
     model.setHeuristics(SCIP_PARAMSETTING.AGGRESSIVE)
 elif MODO == "sin_heuristicas":
     model.setHeuristics(SCIP_PARAMSETTING.OFF)
-# en "default" no tocamos nada
+elif MODO == "inteligente":
+    model.setHeuristics(SCIP_PARAMSETTING.AGGRESSIVE)
+    model.setSeparating(SCIP_PARAMSETTING.FAST)
+    model.setPresolve(SCIP_PARAMSETTING.FAST)
+    handler = PrimeraSolucionHandler()
+    model.includeEventhdlr(handler, "PrimeraSolucion", "Cambia params tras primera solucion")
+
+#model.setEmphasis(SCIP_PARAMEMPHASIS.FEASIBILITY)
 
 model.optimize()
 model.printStatistics()

@@ -15,11 +15,11 @@ import (
 
 const (
 	DirectorioInstancias   = "./problemas"
-	LimiteTiempo           = "86400"
+	LimiteTiempo           = "600"
 	MaxProcesosSimultaneos = 28
 )
 
-var ModosValidos = []string{"default", "agresivo", "sin_heuristicas"}
+var ModosValidos = []string{"default", "agresivo", "sin_heuristicas", "inteligente"}
 
 // ─────────────────────────────────────────────
 // Tipos
