@@ -15,8 +15,8 @@ import (
 
 const (
 	DirectorioInstancias   = "./problemas"
-	LimiteTiempo           = "600"
-	MaxProcesosSimultaneos = 28
+	LimiteTiempo           = "3600"
+	MaxProcesosSimultaneos = 20
 )
 
 var ModosValidos = []string{"default", "agresivo", "sin_heuristicas", "inteligente"}
@@ -59,12 +59,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Separa el flag --secuencial del resto de argumentos.
+	// Parsea flags y argumentos
 	secuencial := false
+	gap := ""
 	var argsRestantes []string
-	for _, arg := range os.Args[1:] {
+	for i := 0; i < len(os.Args[1:]); i++ {
+		arg := os.Args[1+i]
 		if arg == "--secuencial" {
 			secuencial = true
+		} else if arg == "--gap" {
+			if i+1 < len(os.Args[1:]) {
+				gap = os.Args[2+i]
+				i++ // salta el siguiente argumento
+			} else {
+				fmt.Println("Error: --gap requiere un valor")
+				os.Exit(1)
+			}
 		} else {
 			argsRestantes = append(argsRestantes, arg)
 		}
@@ -76,20 +86,26 @@ func main() {
 		for _, arg := range argsRestantes {
 			if !modoValido(arg) {
 				fmt.Printf("Modo '%s' no reconocido. Disponibles: %s\n", arg, strings.Join(ModosValidos, " | "))
-				fmt.Println("Flag opcional: --secuencial  (1 worker, sin taskset/hugectl)")
+				fmt.Println("Flags opcionales:")
+				fmt.Println("  --secuencial      1 worker, sin taskset/hugectl")
+				fmt.Println("  --gap <valor>     Gap objetivo en % (ej: 0.5, 1.0)")
 				os.Exit(1)
 			}
 		}
 		modos = argsRestantes
 	}
 
-	fmt.Printf("Instancias: %d | Modos: %s | Workers: %d\n",
-		len(archivos), strings.Join(modos, ", "), MaxProcesosSimultaneos)
+	gapStr := ""
+	if gap != "" {
+		gapStr = fmt.Sprintf(" | gap=%s%%", gap)
+	}
+	fmt.Printf("Instancias: %d | Modos: %s | Workers: %d%s\n",
+		len(archivos), strings.Join(modos, ", "), MaxProcesosSimultaneos, gapStr)
 
 	// Ejecuta cada modo en secuencia (los problemas dentro de cada modo van en paralelo).
 	for _, modo := range modos {
 		fmt.Printf("\n▶ Iniciando modo: %s\n", strings.ToUpper(modo))
-		ejecutarBateria(archivos, modo, secuencial)
+		ejecutarBateria(archivos, modo, secuencial, gap)
 	}
 
 	fmt.Println("\n--- Batería de pruebas finalizada ---")
@@ -131,7 +147,7 @@ func deduplicar(s []string) []string {
 // Ejecución paralela de una batería
 // ─────────────────────────────────────────────
 
-func ejecutarBateria(archivos []string, modo string, secuencial bool) []ResultadoProblema {
+func ejecutarBateria(archivos []string, modo string, secuencial bool, gap string) []ResultadoProblema {
 	numCPU := runtime.NumCPU()
 	workers := MaxProcesosSimultaneos
 	if secuencial {
@@ -153,7 +169,7 @@ func ejecutarBateria(archivos []string, modo string, secuencial bool) []Resultad
 		go func(workerID, cpu int) {
 			defer wg.Done()
 			for archivo := range tareas {
-				res := ejecutarTarea(workerID, cpu*2, archivo, modo, secuencial)
+				res := ejecutarTarea(workerID, cpu*2, archivo, modo, secuencial, gap)
 				resultadosCh <- res
 			}
 		}(id, cpuID)
@@ -180,21 +196,35 @@ func ejecutarBateria(archivos []string, modo string, secuencial bool) []Resultad
 // Tarea individual
 // ─────────────────────────────────────────────
 
-func ejecutarTarea(workerID, cpuID int, rutaArchivo, modo string, secuencial bool) ResultadoProblema {
+func ejecutarTarea(workerID, cpuID int, rutaArchivo, modo string, secuencial bool, gap string) ResultadoProblema {
 	nombreArchivo := filepath.Base(rutaArchivo)
 	resultado := ResultadoProblema{Archivo: nombreArchivo, Modo: modo}
 
 	var cmd *exec.Cmd
 	if secuencial {
-		cmd = exec.Command(
-			"python", "scip.py", rutaArchivo, LimiteTiempo, modo,
-		)
+		if gap != "" {
+			cmd = exec.Command(
+				"python", "scip.py", rutaArchivo, LimiteTiempo, modo, gap,
+			)
+		} else {
+			cmd = exec.Command(
+				"python", "scip.py", rutaArchivo, LimiteTiempo, modo,
+			)
+		}
 	} else {
-		cmd = exec.Command(
-			"taskset", "-c", strconv.Itoa(cpuID),
-			"hugectl", "--heap",
-			"python", "scip.py", rutaArchivo, LimiteTiempo, modo,
-		)
+		if gap != "" {
+			cmd = exec.Command(
+				"taskset", "-c", strconv.Itoa(cpuID),
+				"hugectl", "--heap",
+				"python", "scip.py", rutaArchivo, LimiteTiempo, modo, gap,
+			)
+		} else {
+			cmd = exec.Command(
+				"taskset", "-c", strconv.Itoa(cpuID),
+				"hugectl", "--heap",
+				"python", "scip.py", rutaArchivo, LimiteTiempo, modo,
+			)
+		}
 	}
 
 	salida, err := cmd.CombinedOutput()
@@ -215,15 +245,16 @@ func ejecutarTarea(workerID, cpuID int, rutaArchivo, modo string, secuencial boo
 // ─────────────────────────────────────────────
 
 var (
-	reEstado     = regexp.MustCompile(`Estado de la solución:\s*(\S+)`)
-	reTiempo     = regexp.MustCompile(`Solving Time \(sec\)\s*:\s*([\d.]+)`)
-	reNodos      = regexp.MustCompile(`Solving Nodes\s*:\s*(\d+)`)
-	rePrimal     = regexp.MustCompile(`Primal Bound\s*:\s*([-\d.e+]+)`)
-	reDual       = regexp.MustCompile(`Dual Bound\s*:\s*([-\d.e+]+)`)
-	reGap        = regexp.MustCompile(`Gap\s*:\s*([\d.]+\s*%)`)
-	reSols       = regexp.MustCompile(`Solutions found\s*:\s*(\d+)`)
-	rePrimeraSol = regexp.MustCompile(`First Solution.*?found by <([^>]+)>`)
-	reMejorSol   = regexp.MustCompile(`Primal Bound\s*:[-\d.e+\s]+\(.*?found by <([^>]+)>`)
+	reEstado       = regexp.MustCompile(`Estado de la solución:\s*(\S+)`)
+	reGapAlcanzado = regexp.MustCompile(`solving was interrupted \[gap limit reached\]`)
+	reTiempo       = regexp.MustCompile(`Solving Time \(sec\)\s*:\s*([\d.]+)`)
+	reNodos        = regexp.MustCompile(`Solving Nodes\s*:\s*(\d+)`)
+	rePrimal       = regexp.MustCompile(`Primal Bound\s*:\s*([-\d.e+]+)`)
+	reDual         = regexp.MustCompile(`Dual Bound\s*:\s*([-\d.e+]+)`)
+	reGap          = regexp.MustCompile(`Gap\s*:\s*([\d.]+\s*%)`)
+	reSols         = regexp.MustCompile(`Solutions found\s*:\s*(\d+)`)
+	rePrimeraSol   = regexp.MustCompile(`First Solution.*?found by <([^>]+)>`)
+	reMejorSol     = regexp.MustCompile(`Primal Bound\s*:[-\d.e+\s]+\(.*?found by <([^>]+)>`)
 	// Fila de tabla de heurísticas: nombre (puede tener espacios) seguido de 5 números.
 	reHeur = regexp.MustCompile(`^\s{2}([\w][\w\s]*[\w]|[\w])\s+:\s+([\d.]+)\s+([\d.]+)\s+(\d+)\s+(\d+)\s+(\d+)`)
 )
@@ -235,6 +266,8 @@ func parsearSalida(archivo, modo, texto string) ResultadoProblema {
 		r.Estado = m[1]
 	} else {
 		switch {
+		case reGapAlcanzado.MatchString(texto):
+			r.Estado = "gap"
 		case strings.Contains(texto, "optimal solution found"):
 			r.Estado = "optimal"
 		case strings.Contains(texto, "time limit reached"):
@@ -243,6 +276,7 @@ func parsearSalida(archivo, modo, texto string) ResultadoProblema {
 			r.Estado = "infeasible"
 		case strings.Contains(texto, "unbounded"):
 			r.Estado = "unbounded"
+
 		default:
 			r.Estado = "unknown"
 		}

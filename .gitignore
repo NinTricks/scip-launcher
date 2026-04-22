@@ -3,3 +3,4 @@ venv/
 *.mps
 *.log
 *.csv
+*.png
