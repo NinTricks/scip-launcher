@@ -10,3 +10,5 @@ build:
 
 clean:
 	rm -f $(BINARY) resumen_*.txt
+clean_logs:
+	rm problemas/*.log
