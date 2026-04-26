@@ -1,159 +1,95 @@
-"""
-Programa de análisis automatizado de resultados de benchmark SCIP.
-
-Lee los archivos CSV generados por parser.py y realiza análisis estadísticos
-y comparativos de los diferentes modos de configuración de heurísticas.
-
-Uso:
-    python analisis.py
-"""
-
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
-import os
 
-# Archivos de datos
-SUMMARY_CSV = 'resultados_summary.csv'
-HEURISTICS_CSV = 'resultados_heuristics.csv'
-SOLUTION_EVENTS_CSV = 'resultados_solution_events.csv'
+# ==========================================
+# 1. NÚCLEO DE DATOS (NO SE TOCA PARA AÑADIR CÁLCULOS)
+# ==========================================
+class MIPExperiment:
+    """
+    Clase central que gestiona la carga y preprocesamiento de los CSV.
+    """
+    def __init__(self, summary_path, events_path, heuristics_path):
+        self.summary = pd.read_csv(summary_path)
+        self.events = pd.read_csv(events_path)
+        self.heuristics = pd.read_csv(heuristics_path)
+        self._preprocess()
 
-def cargar_datos():
-    """Carga los datos de los archivos CSV."""
-    if not os.path.exists(SUMMARY_CSV):
-        print(f"Error: No se encuentra {SUMMARY_CSV}")
-        return None, None, None
-    
-    summary = pd.read_csv(SUMMARY_CSV)
-    heuristics = pd.read_csv(HEURISTICS_CSV) if os.path.exists(HEURISTICS_CSV) else None
-    solution_events = pd.read_csv(SOLUTION_EVENTS_CSV) if os.path.exists(SOLUTION_EVENTS_CSV) else None
-    
-    return summary, heuristics, solution_events
+    def _preprocess(self):
+        """
+        Limpia y estandariza los datos. 
+        Extrae la 'instancia' y el 'modo' de la columna 'problem'.
+        Ejemplo: '30n20b8_agresivo' -> instancia: '30n20b8', modo: 'agresivo'
+        """
+        for df in [self.summary, self.events, self.heuristics]:
+            if 'problem' in df.columns:
+                # El parámetro n=1 asegura que solo separe por el último guion bajo
+                df[['instance', 'modo']] = df['problem'].str.rsplit('_', n=1, expand=True)
 
-def analizar_summary(summary):
-    """Análisis básico del resumen de resultados."""
-    print("=== ANÁLISIS DE RESULTADOS SUMMARY ===\n")
-    
-    # Filtrar solo problemas que encontraron solución
-    summary_con_sol = summary[summary['first_sol_time_s'].notna()]
-    
-    # Estadísticas por modo
-    modos = summary_con_sol['mode'].unique()
-    print(f"Modos analizados: {', '.join(modos)}")
-    print(f"Total problemas con solución encontrada: {len(summary_con_sol)} / {len(summary)}\n")
-    
-    for modo in modos:
-        data_modo = summary_con_sol[summary_con_sol['mode'] == modo]
-        print(f"--- Modo: {modo} ---")
-        print(f"Número de problemas con solución: {len(data_modo)}")
-        print(f"Tiempo promedio de resolución: {data_modo['solving_time_s'].mean():.2f}s")
-        print(f"Tiempo promedio a primera solución: {data_modo['first_sol_time_s'].mean():.2f}s")
-        print(f"Gap final promedio: {data_modo['gap_final_pct'].mean():.2f}%")
-        print(f"Número promedio de soluciones: {data_modo['n_solutions'].mean():.2f}")
-        print(f"Número promedio de nodos: {data_modo['nodes'].mean():.0f}")
-        print()
 
-def comparar_modos(summary):
-    """Compara los modos entre sí."""
-    print("=== COMPARACIÓN ENTRE MODOS ===\n")
-    
-    # Filtrar solo problemas con solución
-    summary_con_sol = summary[summary['first_sol_time_s'].notna()]
-    
-    # Agrupar por modo
-    grouped = summary_con_sol.groupby('mode').agg({
-        'solving_time_s': ['mean', 'std'],
-        'first_sol_time_s': ['mean', 'std'],
-        'gap_final_pct': ['mean', 'std'],
-        'n_solutions': 'mean',
-        'nodes': 'mean'
-    }).round(2)
-    
-    print("Estadísticas por modo (solo problemas con solución encontrada):")
-    print(grouped)
-    print()
+# ==========================================
+# 2. MÓDULOS DE ANÁLISIS (AQUÍ AÑADES TUS NUEVOS CÁLCULOS)
+# ==========================================
 
-def generar_graficos(summary):
-    """Genera gráficos comparativos."""
-    print("Generando gráficos...")
-    
-    # Filtrar solo problemas con solución
-    summary_con_sol = summary[summary['first_sol_time_s'].notna()]
-    
-    # Gráfico de tiempo promedio por modo
-    plt.figure(figsize=(10, 6))
-    means = summary_con_sol.groupby('mode')['solving_time_s'].mean()
-    stds = summary_con_sol.groupby('mode')['solving_time_s'].std()
-    plt.bar(means.index, means, yerr=stds, capsize=5, color='skyblue', alpha=0.8)
-    plt.title('Tiempo Promedio de Resolución por Modo\n(Solo problemas con solución)')
-    plt.ylabel('Tiempo (s)')
-    plt.xlabel('Modo')
-    plt.xticks(rotation=45)
-    plt.ylim(450, 520)  # Zoom para apreciar diferencias
-    plt.grid(axis='y', alpha=0.3)
-    plt.tight_layout()
-    plt.savefig('tiempo_por_modo.png')
-    plt.close()
-    
-    # Gráfico de tiempo a primera solución por modo
-    plt.figure(figsize=(10, 6))
-    means = summary_con_sol.groupby('mode')['first_sol_time_s'].mean()
-    stds = summary_con_sol.groupby('mode')['first_sol_time_s'].std()
-    plt.bar(means.index, means, yerr=stds, capsize=5, color='lightgreen', alpha=0.8)
-    plt.title('Tiempo Promedio a Primera Solución por Modo\n(Solo problemas con solución)')
-    plt.ylabel('Tiempo (s)')
-    plt.xlabel('Modo')
-    plt.xticks(rotation=45)
-    plt.ylim(20, 120)  # Zoom para apreciar diferencias
-    plt.grid(axis='y', alpha=0.3)
-    plt.tight_layout()
-    plt.savefig('tiempo_primera_solucion.png')
-    plt.close()
-    
-    # Gráfico de gap final promedio por modo
-    plt.figure(figsize=(10, 6))
-    summary_con_sol.groupby('mode')['gap_final_pct'].mean().plot(kind='bar')
-    plt.title('Gap Final Promedio por Modo\n(Solo problemas con solución)')
-    plt.ylabel('Gap (%)')
-    plt.xlabel('Modo')
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.savefig('gap_por_modo.png')
-    plt.close()
-    
-    print("Gráficos guardados: tiempo_por_modo.png, tiempo_primera_solucion.png, gap_por_modo.png\n")
+def calc_tiempos_resolucion(experiment: MIPExperiment):
+    """
+    Módulo 1: Calcula el tiempo medio, mediano y máximo de resolución por modo.
+    """
+    df = experiment.summary
+    resumen = df.groupby('modo')['solving_time_s'].agg(
+        Media='mean', 
+        Mediana='median', 
+        DesvEstandar='std',
+        Maximo='max'
+    ).round(2)
+    return resumen
 
-def analizar_heuristics(heuristics):
-    """Análisis de estadísticas de heurísticas."""
-    if heuristics is None:
-        print("No se encontraron datos de heurísticas.\n")
-        return
-    
-    print("=== ANÁLISIS DE HEURÍSTICAS ===\n")
-    
-    # Mejores heurísticas por modo
-    for modo in heuristics['mode'].unique():
-        data_modo = heuristics[heuristics['mode'] == modo]
-        print(f"--- Modo: {modo} ---")
-        # Aquí se podría agregar más análisis detallado
-        print(f"Número de eventos: {len(data_modo)}")
-        print()
+def calc_ahorro_nodos(experiment: MIPExperiment):
+    """
+    Módulo 2: Compara la cantidad de nodos explorados entre modos.
+    """
+    df = experiment.summary
+    nodos = df.groupby('modo')['nodes'].agg(['mean', 'median']).round(0)
+    return nodos
 
-def main():
-    """Función principal."""
-    print("Iniciando análisis de resultados...\n")
+def calc_roi_heuristicas(experiment: MIPExperiment):
+    """
+    Módulo 3: Calcula el Retorno de Inversión (ROI) de cada heurística por modo.
+    Métrica: Soluciones encontradas por segundo de ejecución.
+    """
+    df = experiment.heuristics.copy()
+    # Reemplazamos 0 por NaN temporalmente para evitar división por cero
+    df['exec_time_s_safe'] = df['exec_time_s'].replace(0, np.nan)
+    df['sol_per_sec'] = df['found'] / df['exec_time_s_safe']
     
-    # Cargar datos
-    summary, heuristics, solution_events = cargar_datos()
-    if summary is None:
-        return
-    
-    # Análisis
-    analizar_summary(summary)
-    comparar_modos(summary)
-    generar_graficos(summary)
-    analizar_heuristics(heuristics)
-    
-    print("Análisis completado.")
+    # Agrupamos para ver qué heurística es más eficiente en cada modo
+    roi = df.groupby(['modo', 'heuristic'])['sol_per_sec'].mean().dropna().round(4)
+    return roi
 
+# ==========================================
+# 3. EJECUCIÓN PRINCIPAL
+# ==========================================
 if __name__ == "__main__":
-    main()
+    # 1. Inicializar el experimento con tus archivos
+    # (Asegúrate de que los archivos estén en la misma carpeta o pon la ruta completa)
+    experimento = MIPExperiment(
+        summary_path='resultados_summary.csv',
+        events_path='resultados_solution_events.csv',
+        heuristics_path='resultados_heuristics.csv'
+    )
+
+    # 2. Ejecutar los módulos de análisis que necesites
+    print("--- TIEMPOS DE RESOLUCIÓN POR MODO ---")
+    tiempos = calc_tiempos_resolucion(experimento)
+    print(tiempos)
+    print("\n")
+
+    print("--- NODOS EXPLORADOS POR MODO ---")
+    nodos = calc_ahorro_nodos(experimento)
+    print(nodos)
+    print("\n")
+
+    print("--- ROI DE HEURÍSTICAS (Top 5 en modo agresivo) ---")
+    roi = calc_roi_heuristicas(experimento)
+    if 'agresivo' in roi.index.get_level_values('modo'):
+        print(roi['agresivo'].sort_values(ascending=False).head(5))
