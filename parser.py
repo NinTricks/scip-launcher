@@ -129,8 +129,8 @@ RE_FIRST_SOL= re.compile(
     r'First Solution\s*:\s*([+\-][\d.e+\-]+)\s*'
     r'\(in run \d+, after (\d+) nodes, ([\d.]+) seconds.*?found by <(.+?)>\)'
 )
-RE_GAP_FIRST= re.compile(r'Gap First Sol\.\s*:\s*([\d.]+)\s*%')
-RE_GAP_LAST = re.compile(r'Gap Last Sol\.\s*:\s*([\d.]+)\s*%')
+RE_GAP_FIRST= re.compile(r'Gap First Sol\.\s*:\s*([\d.]+|infinite)\s*%?')
+RE_GAP_LAST = re.compile(r'Gap Last Sol\.\s*:\s*([\d.]+|infinite)\s*%?')
 RE_BEST_SOL = re.compile(
     r'Primal Bound\s*:\s*([+\-][\d.e+\-]+)\s*'
     r'\(in run \d+, after \d+ nodes, ([\d.]+) seconds.*?found by <(.+?)>\)'
@@ -333,12 +333,14 @@ def parse_log(filepath: str) -> SCIPResult:
 
             m = RE_GAP_FIRST.search(line_stripped)
             if m:
-                result.first_sol_gap_pct = float(m.group(1))
+                val = m.group(1)
+                result.first_sol_gap_pct = float('inf') if val == 'infinite' else float(val)
                 continue
 
             m = RE_GAP_LAST.search(line_stripped)
             if m:
-                result.gap_last_sol_pct = float(m.group(1))
+                val = m.group(1)
+                result.gap_last_sol_pct = float('inf') if val == 'infinite' else float(val)
                 continue
 
             m = RE_BEST_SOL.search(line_stripped)

@@ -82,26 +82,97 @@ def calc_tiempos_primera_solucion(experiment: MIPExperiment):
     return resumen
 
 
+#sugerencia, quitar de TODOS los modos los problemas que no tiren en alguno
+#excluir el sin heuristicas tal vez
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+
 def calc_gap_primera_solucion(experiment: MIPExperiment):
-    first_events = experiment.events[experiment.events['event_idx'] == 0][['instance', 'modo', 'gap_pct']]
+    """
+    Calcula la distribución del gap de la primera solución por modo.
+    Excluye casos sin primera solución (first_sol_gap_pct nulo).
+    Los infinitos se excluyen de la gráfica y tabla pero se reportan aparte.
+    """
+    df = experiment.summary
+    excluded_nulos = df['first_sol_gap_pct'].isna().sum()
+    df = df[df['first_sol_gap_pct'].notna()].copy()
 
-    total = len(experiment.summary)
-    excluded_count = total - len(first_events)
+    n_infinitos = np.isinf(df['first_sol_gap_pct']).sum()
+    df_finito = df[np.isfinite(df['first_sol_gap_pct'])]
 
-    df = experiment.summary[['instance', 'modo']].merge(first_events, on=['instance', 'modo'], how='inner')
+    # --- Tabla de percentiles ---
+    percentiles = [10, 25, 50, 75, 90, 95]
+    print("--- GAP PRIMERA SOLUCIÓN — PERCENTILES (%) ---")
+    print(f"{'modo':<20} {'n':>4} {'inf':>4} " + " ".join(f"{'p'+str(p):>8}" for p in percentiles) + f"{'max':>12}")
+    print("-" * (20 + 4 + 4 + len(percentiles) * 9 + 13))
+    for modo, g in df_finito.groupby('modo'):
+        vals = g['first_sol_gap_pct']
+        n_inf_modo = np.isinf(df[df['modo'] == modo]['first_sol_gap_pct']).sum()
+        pcts = np.percentile(vals, percentiles)
+        print(f"{modo:<20} {len(vals):>4} {n_inf_modo:>4} " + " ".join(f"{p:>8.1f}" for p in pcts) + f"{vals.max():>12.1f}")
 
-    resumen = df.groupby('modo')['gap_pct'].agg(
+    print(f"\n(Excluidos por sin primera solución: {excluded_nulos} | Infinitos excluidos de estadísticas: {n_infinitos})")
+
+    # --- Gráfica: boxplot en escala log con los datos finitos ---
+    modos = sorted(df_finito['modo'].unique())
+    colores = {
+        'agresivo':       '#378ADD',
+        'default':        '#1D9E75',
+        'inteligente':    '#D4537E',
+        'sin_heuristicas':'#BA7517',
+    }
+
+    datos = [df_finito[df_finito['modo'] == m]['first_sol_gap_pct'].values for m in modos]
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    fig.patch.set_facecolor('white')
+    ax.set_facecolor('white')
+
+    bp = ax.boxplot(
+        datos,
+        patch_artist=True,
+        notch=False,
+        vert=True,
+        widths=0.5,
+        showfliers=True,
+        flierprops=dict(marker='o', markersize=3, alpha=0.4, linestyle='none'),
+        medianprops=dict(linewidth=2, color='white'),
+        whiskerprops=dict(linewidth=1),
+        capprops=dict(linewidth=1),
+    )
+
+    for patch, modo in zip(bp['boxes'], modos):
+        c = colores.get(modo, '#888')
+        patch.set_facecolor(c)
+        patch.set_alpha(0.85)
+
+    for flier, modo in zip(bp['fliers'], modos):
+        flier.set_markerfacecolor(colores.get(modo, '#888'))
+        flier.set_markeredgecolor(colores.get(modo, '#888'))
+
+    ax.set_yscale('log')
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f'{x:,.0f}%'))
+    ax.set_xticks(range(1, len(modos) + 1))
+    ax.set_xticklabels(modos, fontsize=11)
+    ax.set_ylabel('gap primera solución (%)', fontsize=11)
+    ax.set_title('distribución del gap de la primera solución por modo', fontsize=12, fontweight='normal')
+    ax.grid(axis='y', linestyle='--', linewidth=0.5, alpha=0.5)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    plt.tight_layout()
+    plt.savefig('gap_primera_solucion.png', dpi=150, bbox_inches='tight')
+    plt.show()
+    print("Gráfica guardada en 'gap_primera_solucion.png'")
+
+    resumen = df.groupby('modo')['first_sol_gap_pct'].agg(
         Media='mean',
         Mediana='median',
         DesvEstandar='std',
         Maximo='max'
     ).round(2)
-    resumen.attrs['excluded_cases'] = int(excluded_count)
-
-    n_extremos = (df['gap_pct'] > 1000).sum()
-    if n_extremos > 0:
-        print(f"{n_extremos} caso(s) con gap > 1000% — Considerar mediana en lugar de media.")
-
+    resumen.attrs['excluded_cases'] = int(excluded_nulos)
     return resumen
 
 # ==========================================
