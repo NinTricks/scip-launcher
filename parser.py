@@ -156,15 +156,22 @@ def _parse_filename(filename: str):
     # quitar sufijo _resultado
     stem = re.sub(r'_resultado$', '', stem)
 
-    # detectar gap objetivo opcional
+    # detectar gap objetivo opcional — dos formatos:
+    #   _gap05  -> 0.5%   (formato legacy)
+    #   _10.0   -> 10.0%  (formato float directo)
     gap_target = None
     gap_match = re.search(r'_gap(\d+)', stem)
     if gap_match:
         gap_target = int(gap_match.group(1)) / 10.0
         stem = stem[:gap_match.start()] + stem[gap_match.end():]
+    else:
+        gap_match = re.search(r'_([\d]+\.[\d]+)$', stem)
+        if gap_match:
+            gap_target = float(gap_match.group(1))
+            stem = stem[:gap_match.start()]
 
     # Modos conocidos (pueden contener '_')
-    KNOWN_MODES = ['sin_heuristicas', 'agresivo', 'default', 'fast', 'off']
+    KNOWN_MODES = ['sin_heuristicas', 'agresivo', 'default', 'inteligente', 'fast', 'off']
     mode = 'unknown'
     problem = stem
     for km in sorted(KNOWN_MODES, key=len, reverse=True):
@@ -429,7 +436,7 @@ def summarize_by_mode(results: list[SCIPResult]) -> dict:
 # ---------------------------------------------------------------------------
 
 FLAT_FIELDS = [
-    'filename', 'problem', 'mode', 'gap_target',
+    'filename', 'problem', 'instance', 'mode', 'gap_target',
     'status', 'solving_time_s', 'total_time_s',
     'nodes', 'nodes_total', 'n_solutions',
     'primal_bound', 'dual_bound', 'gap_final_pct',
@@ -444,13 +451,15 @@ def results_to_csv(results: list[SCIPResult], path: str):
         writer = csv.DictWriter(f, fieldnames=FLAT_FIELDS)
         writer.writeheader()
         for r in results:
-            row = {k: getattr(r, k) for k in FLAT_FIELDS}
+            row = {k: getattr(r, k) for k in FLAT_FIELDS if k != 'instance'}
+            # 'problem' ya es la instancia limpia; 'instance' es un alias explícito
+            row['instance'] = r.problem
             writer.writerow(row)
 
 
 def heuristics_to_csv(results: list[SCIPResult], path: str):
     """CSV detallado de la tabla de heurísticas por instancia."""
-    fields = ['problem', 'mode', 'gap_target',
+    fields = ['instance', 'mode', 'gap_target',
               'heuristic', 'exec_time_s', 'setup_time_s',
               'calls', 'found', 'best']
     with open(path, 'w', newline='') as f:
@@ -459,7 +468,7 @@ def heuristics_to_csv(results: list[SCIPResult], path: str):
         for r in results:
             for h in r.heuristic_stats:
                 writer.writerow({
-                    'problem': r.problem, 'mode': r.mode,
+                    'instance': r.problem, 'mode': r.mode,
                     'gap_target': r.gap_target,
                     'heuristic': h.name,
                     'exec_time_s': h.exec_time_s,
@@ -470,7 +479,7 @@ def heuristics_to_csv(results: list[SCIPResult], path: str):
 
 def sol_events_to_csv(results: list[SCIPResult], path: str):
     """CSV de la secuencia de mejoras de solución por instancia."""
-    fields = ['problem', 'mode', 'gap_target',
+    fields = ['instance', 'mode', 'gap_target',
               'event_idx', 'time_s', 'node',
               'primal', 'dual', 'gap_pct', 'source', 'source_type']
     with open(path, 'w', newline='') as f:
@@ -479,7 +488,7 @@ def sol_events_to_csv(results: list[SCIPResult], path: str):
         for r in results:
             for i, ev in enumerate(r.solution_events):
                 writer.writerow({
-                    'problem': r.problem, 'mode': r.mode,
+                    'instance': r.problem, 'mode': r.mode,
                     'gap_target': r.gap_target,
                     'event_idx': i,
                     'time_s': ev.time_s, 'node': ev.node,

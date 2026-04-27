@@ -17,20 +17,18 @@ class MIPExperiment:
 
     def _preprocess(self):
         """
-        Limpia y estandariza los datos. 
-        Extrae la 'instancia' y el 'modo' de la columna 'problem'.
-        Ejemplo: '30n20b8_agresivo' -> instancia: '30n20b8', modo: 'agresivo'
-        Maneja modos que contienen '_', como 'sin_heuristicas'.
+        Estandariza el nombre de la columna de modo en todos los DataFrames.
+        Los CSVs usan 'mode' como nombre de columna; internamente usamos 'modo'.
         """
         for df in [self.summary, self.events, self.heuristics]:
-            if 'problem' in df.columns:
-                df[['instance', 'modo']] = df['problem'].apply(self._parse_problem_mode)
+            if 'mode' in df.columns:
+                df.rename(columns={'mode': 'modo'}, inplace=True)
     
     def _parse_problem_mode(self, problem_str):
         """
         Parsea el problema y modo de una cadena como '30n20b8_sin_heuristicas'.
         """
-        KNOWN_MODES = ['sin_heuristicas', 'agresivo', 'default', 'fast', 'off', 'inteligente'] #soñador, sobra alguno
+        KNOWN_MODES = ['sin_heuristicas', 'agresivo', 'default', 'inteligente']
         for mode in sorted(KNOWN_MODES, key=len, reverse=True):
             suffix = f'_{mode}'
             if problem_str.endswith(suffix):
@@ -50,7 +48,7 @@ class MIPExperiment:
 
 def calc_tiempos_resolucion(experiment: MIPExperiment):
     """
-    Módulo 1: Calcula el tiempo medio, mediano y máximo de resolución por modo.
+    Calcula el tiempo medio, mediano y máximo de resolución por modo.
     Excluye los casos que terminaron en estado `infeasible` o `time_limit`.
     """
     df = experiment.summary
@@ -65,6 +63,46 @@ def calc_tiempos_resolucion(experiment: MIPExperiment):
     resumen.attrs['excluded_cases'] = int(excluded_count)
     return resumen
 
+def calc_tiempos_primera_solucion(experiment: MIPExperiment):
+    """
+    Calcula el tiempo medio, mediano y máximo hasta la primera solución por modo.
+    Excluye únicamente los casos que no encontraron ninguna solución
+    (first_sol_time_s nulo), independientemente del estado final.
+    """
+    df = experiment.summary
+    excluded_count = df['first_sol_time_s'].isna().sum()
+    df = df[df['first_sol_time_s'].notna()]
+    resumen = df.groupby('modo')['first_sol_time_s'].agg(
+        Media='mean', 
+        Mediana='median', 
+        DesvEstandar='std',
+        Maximo='max'
+    ).round(2)
+    resumen.attrs['excluded_cases'] = int(excluded_count)
+    return resumen
+
+
+def calc_gap_primera_solucion(experiment: MIPExperiment):
+    first_events = experiment.events[experiment.events['event_idx'] == 0][['instance', 'modo', 'gap_pct']]
+
+    total = len(experiment.summary)
+    excluded_count = total - len(first_events)
+
+    df = experiment.summary[['instance', 'modo']].merge(first_events, on=['instance', 'modo'], how='inner')
+
+    resumen = df.groupby('modo')['gap_pct'].agg(
+        Media='mean',
+        Mediana='median',
+        DesvEstandar='std',
+        Maximo='max'
+    ).round(2)
+    resumen.attrs['excluded_cases'] = int(excluded_count)
+
+    n_extremos = (df['gap_pct'] > 1000).sum()
+    if n_extremos > 0:
+        print(f"{n_extremos} caso(s) con gap > 1000% — Considerar mediana en lugar de media.")
+
+    return resumen
 
 # ==========================================
 # 3. EJECUCIÓN PRINCIPAL
@@ -84,4 +122,18 @@ if __name__ == "__main__":
     print(tiempos)
     excluded = tiempos.attrs.get('excluded_cases', 0)
     print(f"(Casos excluidos por estado 'infeasible' o 'time_limit': {excluded})")
+    print("\n")
+
+    print("--- TIEMPOS HASTA PRIMERA SOLUCIÓN POR MODO ---")
+    tiempos_primera = calc_tiempos_primera_solucion(experimento)
+    print(tiempos_primera)
+    excluded_primera = tiempos_primera.attrs.get('excluded_cases', 0)
+    print(f"(Casos excluidos por no tener primera solución: {excluded_primera})")
+    print("\n")
+
+    print("--- GAPS PRIMERA SOLUCIÓN ---")
+    gaps = calc_gap_primera_solucion(experimento)
+    print(gaps)
+    excluded = gaps.attrs.get('excluded_cases',0)
+    print(f"(Casos excluidos por no tener primera solución con gap: {excluded})")
     print("\n")
