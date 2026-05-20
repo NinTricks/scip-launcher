@@ -2,6 +2,8 @@ from pyscipopt import *
 import sys
 import os
 
+SEMILLA_FIJA = 33
+
 class PrimeraSolucionHandler(Eventhdlr):
     
     def eventinit(self):
@@ -55,8 +57,8 @@ if os.path.exists(NOMBRE_LOG):
     os.remove(NOMBRE_LOG)
 
 model = Model()
-model.setParam("limits/memory", 92160)  # 90 GB 
 model.readProblem(nombre_completo)
+model.setParam("limits/memory", 92160)  # 90 GB 
 model.setLogfile(NOMBRE_LOG)
 if LIMITE_TIEMPO != 0:
     model.setParam("limits/time", LIMITE_TIEMPO)
@@ -71,12 +73,13 @@ elif MODO == "sin_heuristicas":
     model.setHeuristics(SCIP_PARAMSETTING.OFF)
 elif MODO == "inteligente":
     model.setHeuristics(SCIP_PARAMSETTING.AGGRESSIVE)
-    model.setSeparating(SCIP_PARAMSETTING.FAST)
-    model.setPresolve(SCIP_PARAMSETTING.FAST)
     handler = PrimeraSolucionHandler()
     model.includeEventhdlr(handler, "PrimeraSolucion", "Cambia params tras primera solucion")
 
-#model.setEmphasis(SCIP_PARAMEMPHASIS.FEASIBILITY)
+# fijar semilla
+model.setParam("randomization/randomseedshift", SEMILLA_FIJA)
+model.setParam("randomization/permutationseed", SEMILLA_FIJA)
+model.setParam("randomization/lpseed", SEMILLA_FIJA)
 
 model.optimize()
 model.printStatistics()

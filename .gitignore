@@ -4,3 +4,4 @@ venv/
 *.log
 *.csv
 *.png
+gráficas/
