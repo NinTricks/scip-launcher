@@ -15,7 +15,7 @@ import (
 
 const (
 	DirectorioInstancias   = "./problemas"
-	LimiteTiempo           = "3600"
+	LimiteTiempo           = "7200"
 	MaxProcesosSimultaneos = 20
 )
 

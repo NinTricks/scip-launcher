@@ -26,6 +26,8 @@ if len(sys.argv) < 3:
     sys.exit(1)
 
 NOMBRE_PROBLEMA = sys.argv[1]
+nombre_completo = NOMBRE_PROBLEMA
+NOMBRE_PROBLEMA = os.path.basename(NOMBRE_PROBLEMA)
 LIMITE_TIEMPO = float(sys.argv[2])
 MODO = sys.argv[3] if len(sys.argv) > 3 else "default"
 GAP_OBJETIVO = None
@@ -46,12 +48,15 @@ if GAP_OBJETIVO is not None:
     NOMBRE_LOG = NOMBRE_PROBLEMA.split('.')[0] + f"_{MODO}_{gap_str}_resultado.log"
 else:
     NOMBRE_LOG = NOMBRE_PROBLEMA.split('.')[0] + f"_{MODO}_resultado.log"
+if not os.path.exists("logs"):
+    os.makedirs("logs")
+NOMBRE_LOG = os.path.join("logs",NOMBRE_LOG)
 if os.path.exists(NOMBRE_LOG):
     os.remove(NOMBRE_LOG)
 
 model = Model()
 model.setParam("limits/memory", 92160)  # 90 GB 
-model.readProblem(NOMBRE_PROBLEMA)
+model.readProblem(nombre_completo)
 model.setLogfile(NOMBRE_LOG)
 if LIMITE_TIEMPO != 0:
     model.setParam("limits/time", LIMITE_TIEMPO)
