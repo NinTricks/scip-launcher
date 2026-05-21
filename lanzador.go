@@ -11,12 +11,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
 	DirectorioInstancias   = "./problemas"
-	LimiteTiempo           = "7200"
-	MaxProcesosSimultaneos = 20
+	LimiteTiempo           = "10800"
+	MaxProcesosSimultaneos = 16
 )
 
 var ModosValidos = []string{"default", "agresivo", "sin_heuristicas", "inteligente"}
@@ -148,6 +149,8 @@ func deduplicar(s []string) []string {
 // ─────────────────────────────────────────────
 
 func ejecutarBateria(archivos []string, modo string, secuencial bool, gap string) []ResultadoProblema {
+	inicioBateria := time.Now()
+
 	numCPU := runtime.NumCPU()
 	workers := MaxProcesosSimultaneos
 	if secuencial {
@@ -169,7 +172,7 @@ func ejecutarBateria(archivos []string, modo string, secuencial bool, gap string
 		go func(workerID, cpu int) {
 			defer wg.Done()
 			for archivo := range tareas {
-				res := ejecutarTarea(workerID, cpu*2, archivo, modo, secuencial, gap)
+				res := ejecutarTarea(workerID, cpu*2, archivo, modo, secuencial, gap, inicioBateria)
 				resultadosCh <- res
 			}
 		}(id, cpuID)
@@ -196,9 +199,10 @@ func ejecutarBateria(archivos []string, modo string, secuencial bool, gap string
 // Tarea individual
 // ─────────────────────────────────────────────
 
-func ejecutarTarea(workerID, cpuID int, rutaArchivo, modo string, secuencial bool, gap string) ResultadoProblema {
+func ejecutarTarea(workerID, cpuID int, rutaArchivo, modo string, secuencial bool, gap string, inicioBateria time.Time) ResultadoProblema {
 	nombreArchivo := filepath.Base(rutaArchivo)
 	resultado := ResultadoProblema{Archivo: nombreArchivo, Modo: modo}
+	inicioTarea := time.Now()
 
 	var cmd *exec.Cmd
 	if secuencial {
@@ -228,16 +232,33 @@ func ejecutarTarea(workerID, cpuID int, rutaArchivo, modo string, secuencial boo
 	}
 
 	salida, err := cmd.CombinedOutput()
+	duracionTarea := time.Since(inicioTarea)
+	transcurrido := time.Since(inicioBateria)
+
 	if err != nil {
-		fmt.Printf("[W%02d/cpu%d] ✗ %s (%s): %v\n", workerID, cpuID, nombreArchivo, modo, err)
+		fmt.Printf("[W%02d/cpu%d] ✗ %s (%s): %v | tarea=%s total=%s\n",
+			workerID, cpuID, nombreArchivo, modo, err,
+			formatDuracion(duracionTarea), formatDuracion(transcurrido))
 		resultado.Estado = "error"
 		return resultado
 	}
 
 	resultado = parsearSalida(nombreArchivo, modo, string(salida))
-	fmt.Printf("[W%02d/cpu%d] ✓ %-30s | %s | estado=%-12s gap=%-10s primera_sol=%s\n",
-		workerID, cpuID, nombreArchivo, modo, resultado.Estado, resultado.Gap, resultado.PrimeraSol)
+	fmt.Printf("[W%02d/cpu%d] ✓ %-30s | %s | estado=%-12s gap=%-10s | tarea=%s total=%s\n",
+		workerID, cpuID, nombreArchivo, modo, resultado.Estado, resultado.Gap,
+		formatDuracion(duracionTarea), formatDuracion(transcurrido))
 	return resultado
+}
+
+// formatDuracion devuelve una representación compacta de una duración:
+// segundos con un decimal si es menor de un minuto, o "Xm Ys" en caso contrario.
+func formatDuracion(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	return fmt.Sprintf("%dm%02ds", m, s)
 }
 
 // ─────────────────────────────────────────────

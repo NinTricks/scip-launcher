@@ -50,7 +50,7 @@ tabla_introduccion.columns = [
     'Tiempo Total (Horas CPU)', 
     'Tiempo Medio por Instancia (s)', 
     'Llamadas Totales (Volumen)', 
-    'Llamadas Medias por Instancia'
+    'Media de llamadas por instancia'
 ]
 
 print(tabla_introduccion)
@@ -77,17 +77,17 @@ axes[0].set_title("Tiempo ejecutando heurísticas", fontsize=12, pad=10)
 axes[0].set_ylabel("Tiempo (horas de CPU)", fontsize=11)
 axes[0].set_xlabel("Modo de ejecución", fontsize=11)
 
-# llamadas medias por instancia
+# Media de llamadas por instancia
 sns.barplot(
     ax=axes[1],
     x=tabla_introduccion.index,
-    y=tabla_introduccion['Llamadas Medias por Instancia'],
+    y=tabla_introduccion['Media de llamadas por instancia'],
     hue=tabla_introduccion.index,
     legend=False,
     palette=colores,
     order=modos_orden
 )
-axes[1].set_title("Llamadas medias por problema", fontsize=12, pad=10)
+axes[1].set_title("Media de llamadas por problema", fontsize=12, pad=10)
 axes[1].set_ylabel("Número de llamadas (Promedio)", fontsize=11)
 axes[1].set_xlabel("Modo de ejecución", fontsize=11)
 
@@ -133,10 +133,10 @@ plt.title("Comparativa de Gap Final (%) por Modo\n(Intersección estricta de ins
 plt.ylabel("Gap Final (%)", fontsize=12)
 plt.xlabel("Modo de Ejecución", fontsize=12)
 plt.grid(axis='y', linestyle='--', alpha=0.7)
-plt.yscale('symlog')
-plt.ylim(-0.1, 200)
+#plt.yscale('symlog')
+plt.ylim(0, 5)
 
-plt.tight_layout()
+#plt.tight_layout()
 ruta_foto = os.path.join(CARPETA_GRAFICAS, "boxplot_gap_final.png")
 plt.savefig(ruta_foto, dpi=300)
 plt.close()
@@ -268,7 +268,7 @@ plt.title("Tiempo de ejecución de cada instancia por modo", fontsize=13, pad=12
 plt.ylabel("Tiempo (segundos) - Escala Log", fontsize=11)
 plt.xlabel("Modo de ejecución", fontsize=11)
 
-plt.grid(axis='y', linestyle='--', alpha=0.4, which="both")
+plt.grid(axis='y', linestyle='--', alpha=0.5)
 
 ruta_boxplot_instancias = os.path.join(CARPETA_GRAFICAS, "boxplot_tiempos_instancias.png")
 plt.tight_layout()
@@ -332,10 +332,72 @@ plt.yscale('log')
 plt.title("Tiempo hasta la primera solución\n(imputando el tiempo límite a las instancias no resueltas)", fontsize=13, pad=12)
 plt.ylabel("Tiempo (segundos) - Escala Log", fontsize=11)
 plt.xlabel("Modo de ejecución", fontsize=11)
-plt.grid(axis='y', linestyle='--', alpha=0.4, which="both")
+plt.grid(axis='y', linestyle='--', alpha=0.5)
 
 ruta_grafica_primera = os.path.join(CARPETA_GRAFICAS, "boxplot_tiempo_primera_solucion.png")
 plt.tight_layout()
 plt.savefig(ruta_grafica_primera, dpi=300)
+plt.close()
+
+################################################################### PROPORCIÓN DE TIEMPO EN HEURÍSTICAS
+print("\n" + "="*40)
+print("=== PROPORCIÓN DE TIEMPO EN HEURÍSTICAS ===")
+print("="*40)
+
+df_heur_inst = df_heur.groupby(['instance', 'mode']).agg(
+    Tiempo_Heur_S=('exec_time_s', 'sum')  # solo exec, no setup, para ser justo con el solver
+).reset_index()
+
+df_merged = df.merge(df_heur_inst, on=['instance', 'mode'], how='left')
+df_merged['Tiempo_Heur_S'] = df_merged['Tiempo_Heur_S'].fillna(0)
+df_merged['Prop_Heur_Pct'] = (df_merged['Tiempo_Heur_S'] / df_merged['total_time_s']) * 100
+
+tabla_prop_modo = df_merged.groupby('mode').agg(
+    Tiempo_Total_Solver_S=('total_time_s', 'sum'),
+    Tiempo_Total_Heur_S=('Tiempo_Heur_S', 'sum'),
+    Media_Prop_Pct=('Prop_Heur_Pct', 'mean'),
+    Mediana_Prop_Pct=('Prop_Heur_Pct', 'median'),
+    Max_Prop_Pct=('Prop_Heur_Pct', 'max')
+).reindex(['sin_heuristicas', 'default', 'agresivo', 'inteligente'])
+
+tabla_prop_modo['Prop_Global_Pct'] = (
+    tabla_prop_modo['Tiempo_Total_Heur_S'] / tabla_prop_modo['Tiempo_Total_Solver_S']
+) * 100
+
+tabla_prop_modo.columns = [
+    'Tiempo Total Solver (s)',
+    'Tiempo Total Heur (s)',
+    'Media Proporción (%)',
+    'Mediana Proporción (%)',
+    'Máx Proporción (%)',
+    'Proporción Global (%)'
+]
+
+print("\n-- Proporción global por modo --")
+print(tabla_prop_modo.to_string())
+
+modos_orden = ['sin_heuristicas', 'default', 'agresivo', 'inteligente']
+colores     = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99']
+
+plt.figure(figsize=(10, 6))
+
+
+sns.boxplot(
+    x='mode', y='Prop_Heur_Pct', data=df_merged,
+    order=modos_orden, hue='mode', legend=False, palette=colores, fliersize=0
+)
+sns.stripplot(
+    x='mode', y='Prop_Heur_Pct', data=df_merged,
+    order=modos_orden, color='.2', alpha=0.5, jitter=0.2, size=4
+)
+
+plt.title("Proporción del tiempo dedicado a heurísticas por instancia", fontsize=13, pad=12)
+plt.ylabel("% del tiempo total del solver", fontsize=11)
+plt.xlabel("Modo de ejecución", fontsize=11)
+plt.grid(axis='y', linestyle='--', alpha=0.5)
+
+plt.tight_layout()
+ruta_foto = os.path.join(CARPETA_GRAFICAS, "proporcion_tiempo_heuristicas.png")
+plt.savefig(ruta_foto, dpi=300)
 plt.close()
 
