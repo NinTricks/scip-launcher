@@ -12,6 +12,15 @@ CARPETA_SCRIPT = os.path.dirname(os.path.abspath(__file__))
 CARPETA_GRAFICAS = os.path.join(CARPETA_SCRIPT, "gráficas")
 os.makedirs(CARPETA_GRAFICAS, exist_ok=True)
 
+colores_dict = {
+    'sin_heuristicas': '#ff9999',
+    'default': '#66b3ff',
+    'agresivo': '#99ff99',
+    'inteligente': '#ffcc99'
+}
+
+modos_orden = ['sin_heuristicas', 'default', 'agresivo', 'inteligente']
+
 ############################################################## INTRODUCCIÓN
 df_heur = pd.read_csv("resultados_heuristics.csv")
 pd.options.display.float_format = '{:.2f}'.format
@@ -29,7 +38,7 @@ analisis_general = df_heur.groupby('mode').agg(
     Tiempo_Ejecucion_S=('exec_time_s', 'sum'),
     Tiempo_Setup_S=('setup_time_s', 'sum'),
     Llamadas_Totales=('calls', 'sum')
-).reindex(['sin_heuristicas', 'default', 'agresivo', 'inteligente'])
+).reindex(modos_orden)
 
 # tiempo total (exec + setup)
 analisis_general['Tiempo_Total_S'] = analisis_general['Tiempo_Ejecucion_S'] + analisis_general['Tiempo_Setup_S']
@@ -60,9 +69,6 @@ print(tabla_introduccion)
 sns.set_theme(style="whitegrid")
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-colores = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99']
-modos_orden = ['sin_heuristicas', 'default', 'agresivo', 'inteligente']
-
 # tiempo total en horas
 sns.barplot(
     ax=axes[0],
@@ -70,7 +76,7 @@ sns.barplot(
     y=tabla_introduccion['Tiempo Total (Horas CPU)'],
     hue=tabla_introduccion.index,
     legend=False,
-    palette=colores,
+    palette=colores_dict,
     order=modos_orden
 )
 axes[0].set_title("Tiempo ejecutando heurísticas", fontsize=12, pad=10)
@@ -84,7 +90,7 @@ sns.barplot(
     y=tabla_introduccion['Media de llamadas por instancia'],
     hue=tabla_introduccion.index,
     legend=False,
-    palette=colores,
+    palette=colores_dict,
     order=modos_orden
 )
 axes[1].set_title("Media de llamadas por problema", fontsize=12, pad=10)
@@ -123,10 +129,10 @@ sns.boxplot(
     x='mode', 
     y='gap_final_pct', 
     data=df_fair, 
-    order=['sin_heuristicas', 'default', 'agresivo', 'inteligente'],
+    order=modos_orden,
     hue='mode',
     legend=False,
-    palette=['#ff9999', '#66b3ff', '#99ff99', '#ffcc99']
+    palette=colores_dict
 )
 
 plt.title("Comparativa de Gap Final (%) por Modo\n(Intersección estricta de instancias resueltas)", fontsize=14, pad=15)
@@ -153,7 +159,7 @@ resumen_stats = df_fair.groupby('mode').agg(
     Mediana=('gap_final_pct', 'median'),
     Desviacion_Estandar=('gap_final_pct', 'std'),
     Maximo=('gap_final_pct', 'max')
-).reindex(['sin_heuristicas', 'default', 'agresivo', 'inteligente'])
+).reindex(modos_orden)
 
 resumen_stats.columns = [
     'Media Aritmética', 
@@ -184,7 +190,7 @@ tiempo_modo = df_heur.groupby('mode').agg(
     Tiempo_Ejecucion_S=('exec_time_s', 'sum'),
     Tiempo_Setup_S=('setup_time_s', 'sum'),
     Llamadas_Totales=('calls', 'sum')
-).reindex(['sin_heuristicas', 'default', 'agresivo', 'inteligente'])
+).reindex(modos_orden)
 
 # calcular tiempo total (exec + setup)
 tiempo_modo['Tiempo_Total_Heur_S'] = tiempo_modo['Tiempo_Ejecucion_S'] + tiempo_modo['Tiempo_Setup_S']
@@ -199,7 +205,7 @@ sns.barplot(
     y=tiempo_modo['Tiempo_Total_Heur_Horas'], 
     hue=tiempo_modo.index,
     legend=False,
-    palette=['#ff9999', '#66b3ff', '#99ff99', '#ffcc99']
+    palette=colores_dict
 )
 plt.title("Tiempo total invertido en heurísticas", fontsize=13, pad=12)
 plt.ylabel("Tiempo total (horas de CPU)", fontsize=11)
@@ -231,7 +237,7 @@ tabla_tiempos = df.groupby('mode').agg(
     Mediana_s=('total_time_s', 'median'),
     Percentil_75_s=('total_time_s', p75),
     Percentil_90_s=('total_time_s', p90)
-).reindex(['sin_heuristicas', 'default', 'agresivo', 'inteligente'])
+).reindex(modos_orden)
 
 tabla_tiempos.insert(2, 'Tasa_Optimos_%', (tabla_tiempos['Optimos_Alcanzados'] / tabla_tiempos['Total_Instancias']) * 100)
 
@@ -244,21 +250,21 @@ sns.boxplot(
     x='mode', 
     y='total_time_s', 
     data=df, 
-    order=['sin_heuristicas', 'default', 'agresivo', 'inteligente'],
+    order=modos_orden,
     hue='mode',
     legend=False,
-    palette=['#ff9999', '#66b3ff', '#99ff99', '#ffcc99'],
-    fliersize=0 # Escondemos los outliers del boxplot para que no se dupliquen con los puntos reales
+    palette=colores_dict,
+    fliersize=0 
 )
 
 sns.stripplot(
     x='mode', 
     y='total_time_s', 
     data=df, 
-    order=['sin_heuristicas', 'default', 'agresivo', 'inteligente'],
-    color='.2',      # Color gris oscuro para los puntos
-    alpha=0.5,       # Transparencia para detectar nubes o acumulaciones de problemas
-    jitter=0.2,      # Dispersión horizontal para que los puntos no se solapen entre sí
+    order=modos_orden,
+    color='.2',
+    alpha=0.5,
+    jitter=0.2,
     size=4
 )
 
@@ -295,7 +301,7 @@ tabla_primera = df_primera.groupby('mode').agg(
     Percentil_75_s=('first_sol_time_cleaned', p75),
     Percentil_90_s=('first_sol_time_cleaned', p90),
     Maximo_s=('first_sol_time_cleaned', 'max')
-).reindex(['sin_heuristicas', 'default', 'agresivo', 'inteligente'])
+).reindex(modos_orden)
 
 # porcentaje de instancias donde el modo no encontró
 tabla_primera.insert(1, '%_Fracaso_Sin_Sol', (tabla_primera['Instancias_Sin_Solucion'] / tabla_primera['Total_Instancias']) * 100)
@@ -309,10 +315,10 @@ sns.boxplot(
     x='mode', 
     y='first_sol_time_cleaned', 
     data=df_primera, 
-    order=['sin_heuristicas', 'default', 'agresivo', 'inteligente'],
+    order=modos_orden,
     hue='mode',
     legend=False,
-    palette=['#ff9999', '#66b3ff', '#99ff99', '#ffcc99'],
+    palette=colores_dict,
     fliersize=0
 )
 
@@ -320,7 +326,7 @@ sns.stripplot(
     x='mode', 
     y='first_sol_time_cleaned', 
     data=df_primera, 
-    order=['sin_heuristicas', 'default', 'agresivo', 'inteligente'],
+    order=modos_orden,
     color='.2',
     alpha=0.5,
     jitter=0.2,
@@ -358,7 +364,7 @@ tabla_prop_modo = df_merged.groupby('mode').agg(
     Media_Prop_Pct=('Prop_Heur_Pct', 'mean'),
     Mediana_Prop_Pct=('Prop_Heur_Pct', 'median'),
     Max_Prop_Pct=('Prop_Heur_Pct', 'max')
-).reindex(['sin_heuristicas', 'default', 'agresivo', 'inteligente'])
+).reindex(modos_orden)
 
 tabla_prop_modo['Prop_Global_Pct'] = (
     tabla_prop_modo['Tiempo_Total_Heur_S'] / tabla_prop_modo['Tiempo_Total_Solver_S']
@@ -376,15 +382,13 @@ tabla_prop_modo.columns = [
 print("\n-- Proporción global por modo --")
 print(tabla_prop_modo.to_string())
 
-modos_orden = ['sin_heuristicas', 'default', 'agresivo', 'inteligente']
-colores     = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99']
 
 plt.figure(figsize=(10, 6))
 
 
 sns.boxplot(
     x='mode', y='Prop_Heur_Pct', data=df_merged,
-    order=modos_orden, hue='mode', legend=False, palette=colores, fliersize=0
+    order=modos_orden, hue='mode', legend=False, palette=colores_dict, fliersize=0
 )
 sns.stripplot(
     x='mode', y='Prop_Heur_Pct', data=df_merged,
@@ -400,4 +404,3 @@ plt.tight_layout()
 ruta_foto = os.path.join(CARPETA_GRAFICAS, "proporcion_tiempo_heuristicas.png")
 plt.savefig(ruta_foto, dpi=300)
 plt.close()
-

@@ -4,9 +4,7 @@ Parser de logs SCIP para análisis de benchmark de heurísticas primales.
 Convención de nombres de archivo esperada:
     <nombre_problema>_<modo>_resultado.log
 
-Modos soportados: agresivo, default, sin_heuristicas
-También soporta ejecuciones con gap objetivo: <nombre>_<modo>_gap<N>_resultado.log
-  Ejemplo: unitcal_7_agresivo_gap05_resultado.log  (gap objetivo = 0.5%)
+Modos soportados: agresivo, default, sin_heuristicas, inteligente, fast, off
 
 Uso:
     python scip_log_parser.py <directorio_o_lista_de_logs> [--output resultados.csv]
@@ -56,11 +54,10 @@ class SCIPResult:
     # --- identificación ---
     filename: str
     problem: str
-    mode: str          # agresivo | default | sin_heuristicas
-    gap_target: Optional[float]   # None = sin límite de gap
+    mode: str          # agresivo | default | sin_heuristicas | inteligente | ...
 
     # --- estado final ---
-    status: str        # 'optimal' | 'gap_limit' | 'time_limit' | 'infeasible' | 'unknown'
+    status: str        # 'optimal' | 'time_limit' | 'infeasible' | 'unknown' | ...
     solving_time_s: float
     total_time_s: float
     nodes: int
@@ -83,9 +80,6 @@ class SCIPResult:
     best_sol_heuristic: Optional[str]
     gap_last_sol_pct: Optional[float]
 
-    # --- tiempo hasta gap objetivo alcanzado (si aplica) ---
-    time_to_gap_target_s: Optional[float]
-
     # --- secuencia de mejoras ---
     solution_events: list = field(default_factory=list)
 
@@ -98,8 +92,6 @@ class SCIPResult:
 # ---------------------------------------------------------------------------
 
 # Regex para la línea de mejora en el árbol B&B
-# Ejemplo: "d 329s|     1 |     0 |144047 |     - |farkasdi|..."
-# Ejemplo: "* 362s|   145 |    47 |176733 | 601.3 |    LP  |..."
 RE_BB_SOL = re.compile(
     r'^[dDlLoO*hHbBcCpPrRsSuU]\s+(\d+)s\|\s*(\d+)\s*\|'   # time | node
     r'.*?\|\s*([a-zA-Z0-9 _\-]+?)\s*\|'                   # heur/LP column
@@ -148,29 +140,12 @@ def _heuristic_type(name: str) -> str:
 
 def _parse_filename(filename: str):
     """
-    Extrae (problem, mode, gap_target) del nombre de archivo.
-    Convención: <problem>_<mode>[_gap<N>]_resultado.log
-    gap<N> -> N/10 como porcentaje  (gap05 = 0.5%, gap10 = 1.0%)
+    Extrae (problem, mode) del nombre de archivo.
+    Convención: <problem>_<mode>_resultado.log
     """
     stem = Path(filename).stem  # quita .log
-    # quitar sufijo _resultado
     stem = re.sub(r'_resultado$', '', stem)
 
-    # detectar gap objetivo opcional — dos formatos:
-    #   _gap05  -> 0.5%   (formato legacy)
-    #   _10.0   -> 10.0%  (formato float directo)
-    gap_target = None
-    gap_match = re.search(r'_gap(\d+)', stem)
-    if gap_match:
-        gap_target = int(gap_match.group(1)) / 10.0
-        stem = stem[:gap_match.start()] + stem[gap_match.end():]
-    else:
-        gap_match = re.search(r'_([\d]+\.[\d]+)$', stem)
-        if gap_match:
-            gap_target = float(gap_match.group(1))
-            stem = stem[:gap_match.start()]
-
-    # Modos conocidos (pueden contener '_')
     KNOWN_MODES = ['sin_heuristicas', 'agresivo', 'default', 'inteligente', 'fast', 'off']
     mode = 'unknown'
     problem = stem
@@ -185,18 +160,17 @@ def _parse_filename(filename: str):
         if len(parts) == 2:
             problem, mode = parts
 
-    return problem, mode, gap_target
+    return problem, mode
 
 
 def parse_log(filepath: str) -> SCIPResult:
     filename = os.path.basename(filepath)
-    problem, mode, gap_target = _parse_filename(filename)
+    problem, mode = _parse_filename(filename)
 
     result = SCIPResult(
         filename=filename,
         problem=problem,
         mode=mode,
-        gap_target=gap_target,
         status='unknown',
         solving_time_s=0.0,
         total_time_s=0.0,
@@ -215,7 +189,6 @@ def parse_log(filepath: str) -> SCIPResult:
         best_sol_time_s=None,
         best_sol_heuristic=None,
         gap_last_sol_pct=None,
-        time_to_gap_target_s=None,
     )
 
     in_heur_table = False
@@ -259,10 +232,6 @@ def parse_log(filepath: str) -> SCIPResult:
                     primal=prim, dual=dual, gap_pct=gap,
                     source=src, source_type=stype,
                 ))
-                # comprobar si se alcanza el gap objetivo
-                if gap_target is not None and result.time_to_gap_target_s is None:
-                    if gap <= gap_target:
-                        result.time_to_gap_target_s = t
                 continue
 
             # --- líneas de resumen ---
@@ -273,8 +242,6 @@ def parse_log(filepath: str) -> SCIPResult:
                     result.status = 'optimal'
                 elif 'infeasible' in raw:
                     result.status = 'infeasible'
-                elif 'gap limit' in raw or 'gap_limit' in raw:
-                    result.status = 'gap_limit'
                 elif 'time limit' in raw or 'time_limit' in raw:
                     result.status = 'time_limit'
                 elif 'node limit' in raw:
@@ -325,9 +292,9 @@ def parse_log(filepath: str) -> SCIPResult:
             # --- sección Solution detallada ---
             m = RE_FIRST_SOL.search(line_stripped)
             if m:
-                result.first_sol_value  = float(m.group(1))
-                result.first_sol_node   = int(m.group(2))
-                result.first_sol_time_s = float(m.group(3))
+                result.first_sol_value     = float(m.group(1))
+                result.first_sol_node      = int(m.group(2))
+                result.first_sol_time_s    = float(m.group(3))
                 result.first_sol_heuristic = m.group(4)
                 continue
 
@@ -357,7 +324,7 @@ def parse_log(filepath: str) -> SCIPResult:
 # Agregación y resúmenes
 # ---------------------------------------------------------------------------
 
-def summarize_by_mode(results: list[SCIPResult]) -> dict:
+def summarize_by_mode(results: list) -> dict:
     """Genera estadísticas agregadas por modo."""
     from statistics import mean, median, stdev
 
@@ -411,10 +378,10 @@ def summarize_by_mode(results: list[SCIPResult]) -> dict:
         summary[mode]['first_solution_by_heuristic'] = first_heur_counts
         summary[mode]['best_solution_by_heuristic']  = best_heur_counts
 
-        # top heurísticas por tiempo total acumulado (entre instancias)
-        heur_time_total = {}
+        # top heurísticas por tiempo total acumulado
+        heur_time_total  = {}
         heur_found_total = {}
-        heur_best_total = {}
+        heur_best_total  = {}
         for r in rs:
             for h in r.heuristic_stats:
                 heur_time_total[h.name]  = heur_time_total.get(h.name, 0) + h.exec_time_s
@@ -438,30 +405,29 @@ def summarize_by_mode(results: list[SCIPResult]) -> dict:
 # ---------------------------------------------------------------------------
 
 FLAT_FIELDS = [
-    'filename', 'problem', 'instance', 'mode', 'gap_target',
+    'filename', 'problem', 'instance', 'mode',
     'status', 'solving_time_s', 'total_time_s',
     'nodes', 'nodes_total', 'n_solutions',
     'primal_bound', 'dual_bound', 'gap_final_pct',
     'first_sol_value', 'first_sol_time_s', 'first_sol_node',
     'first_sol_gap_pct', 'first_sol_heuristic',
     'best_sol_value', 'best_sol_time_s', 'best_sol_heuristic',
-    'gap_last_sol_pct', 'time_to_gap_target_s',
+    'gap_last_sol_pct',
 ]
 
-def results_to_csv(results: list[SCIPResult], path: str):
+def results_to_csv(results: list, path: str):
     with open(path, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=FLAT_FIELDS)
         writer.writeheader()
         for r in results:
             row = {k: getattr(r, k) for k in FLAT_FIELDS if k != 'instance'}
-            # 'problem' ya es la instancia limpia; 'instance' es un alias explícito
             row['instance'] = r.problem
             writer.writerow(row)
 
 
-def heuristics_to_csv(results: list[SCIPResult], path: str):
+def heuristics_to_csv(results: list, path: str):
     """CSV detallado de la tabla de heurísticas por instancia."""
-    fields = ['instance', 'mode', 'gap_target',
+    fields = ['instance', 'mode',
               'heuristic', 'exec_time_s', 'setup_time_s',
               'calls', 'found', 'best']
     with open(path, 'w', newline='') as f:
@@ -471,7 +437,6 @@ def heuristics_to_csv(results: list[SCIPResult], path: str):
             for h in r.heuristic_stats:
                 writer.writerow({
                     'instance': r.problem, 'mode': r.mode,
-                    'gap_target': r.gap_target,
                     'heuristic': h.name,
                     'exec_time_s': h.exec_time_s,
                     'setup_time_s': h.setup_time_s,
@@ -479,9 +444,9 @@ def heuristics_to_csv(results: list[SCIPResult], path: str):
                 })
 
 
-def sol_events_to_csv(results: list[SCIPResult], path: str):
+def sol_events_to_csv(results: list, path: str):
     """CSV de la secuencia de mejoras de solución por instancia."""
-    fields = ['instance', 'mode', 'gap_target',
+    fields = ['instance', 'mode',
               'event_idx', 'time_s', 'node',
               'primal', 'dual', 'gap_pct', 'source', 'source_type']
     with open(path, 'w', newline='') as f:
@@ -491,7 +456,6 @@ def sol_events_to_csv(results: list[SCIPResult], path: str):
             for i, ev in enumerate(r.solution_events):
                 writer.writerow({
                     'instance': r.problem, 'mode': r.mode,
-                    'gap_target': r.gap_target,
                     'event_idx': i,
                     'time_s': ev.time_s, 'node': ev.node,
                     'primal': ev.primal, 'dual': ev.dual,
@@ -556,6 +520,10 @@ def main():
     print("\n" + "="*60)
     print("RESUMEN POR MODO")
     print("="*60)
+
+    def _fmt_gap(v):
+        return "inf" if v == float('inf') else f"{v:.2f}"
+
     for mode, s in summary.items():
         print(f"\n[{mode}]  {s['n_instances']} instancias  "
               f"({s['n_optimal']} óptimas)")
@@ -564,8 +532,6 @@ def main():
               f"mediana={st['median']:.1f}  "
               f"[{st['min']:.1f} - {st['max']:.1f}]")
         gf = s['gap_final_pct']
-        def _fmt_gap(v):
-            return "inf" if v == float('inf') else f"{v:.2f}"
         print(f"  Gap final (%):         media={_fmt_gap(gf['mean'])}  "
               f"mediana={_fmt_gap(gf['median'])}")
         nd = s['nodes_total']

@@ -5,21 +5,20 @@ import os
 SEMILLA_FIJA = 33
 
 class PrimeraSolucionHandler(Eventhdlr):
-    
+
     def eventinit(self):
-        # Suscribirse al evento de mejor solución encontrada
         self.model.catchEvent(SCIP_EVENTTYPE.BESTSOLFOUND, self)
-    
+        self._activado = False
+
     def eventexit(self):
         self.model.dropEvent(SCIP_EVENTTYPE.BESTSOLFOUND, self)
-    
+
     def eventexec(self, event):
-        # Solo actuar en la primera solución
-        if self.model.getNSols() == 1:
-            print("Primera solución encontrada! Cambiando a configuración OPTIMALITY...")
-            self.model.setHeuristics(SCIP_PARAMSETTING.DEFAULT)
-            self.model.setSeparating(SCIP_PARAMSETTING.DEFAULT)
-            self.model.setPresolve(SCIP_PARAMSETTING.DEFAULT)
+        if not self._activado:
+            self._activado = True
+            print("Primera solución encontrada! Interrumpiendo para cambiar a DEFAULT...")
+            self.model.interruptSolve()
+
 
 if len(sys.argv) < 3:
     print("Error en los parametros: archivo tiempo [modo] [gap]")
@@ -32,11 +31,11 @@ nombre_completo = NOMBRE_PROBLEMA
 NOMBRE_PROBLEMA = os.path.basename(NOMBRE_PROBLEMA)
 LIMITE_TIEMPO = float(sys.argv[2])
 MODO = sys.argv[3] if len(sys.argv) > 3 else "default"
-GAP_OBJETIVO = None
 
+GAP_OBJETIVO = None
 if len(sys.argv) > 4:
     try:
-        GAP_OBJETIVO = float(sys.argv[4]) / 100.0  # convertir porcentaje a decimal
+        GAP_OBJETIVO = float(sys.argv[4]) / 100.0
     except ValueError:
         print(f"Gap '{sys.argv[4]}' no válido. Usa un número (ej: 0.5)")
         sys.exit(1)
@@ -50,38 +49,63 @@ if GAP_OBJETIVO is not None:
     NOMBRE_LOG = NOMBRE_PROBLEMA.split('.')[0] + f"_{MODO}_{gap_str}_resultado.log"
 else:
     NOMBRE_LOG = NOMBRE_PROBLEMA.split('.')[0] + f"_{MODO}_resultado.log"
+
 if not os.path.exists("logs"):
     os.makedirs("logs")
-NOMBRE_LOG = os.path.join("logs",NOMBRE_LOG)
+NOMBRE_LOG = os.path.join("logs", NOMBRE_LOG)
+
 if os.path.exists(NOMBRE_LOG):
     os.remove(NOMBRE_LOG)
 
 model = Model()
 model.readProblem(nombre_completo)
-model.setParam("limits/memory", 92160)  # 90 GB 
+model.setParam("limits/memory", 92160)  # 90 GB
 model.setLogfile(NOMBRE_LOG)
+
 if LIMITE_TIEMPO != 0:
     model.setParam("limits/time", LIMITE_TIEMPO)
 if GAP_OBJETIVO is not None:
     model.setParam("limits/gap", GAP_OBJETIVO)
+
 model.setParam("display/freq", 5000)
 model.setParam("display/lpinfo", False)
 
 if MODO == "agresivo":
     model.setHeuristics(SCIP_PARAMSETTING.AGGRESSIVE)
+
 elif MODO == "sin_heuristicas":
     model.setHeuristics(SCIP_PARAMSETTING.OFF)
+
 elif MODO == "inteligente":
     model.setHeuristics(SCIP_PARAMSETTING.AGGRESSIVE)
     handler = PrimeraSolucionHandler()
-    model.includeEventhdlr(handler, "PrimeraSolucion", "Cambia params tras primera solucion")
+    model.includeEventhdlr(handler, "PrimeraSolucion", "Interrumpe tras primera solucion")
 
-# fijar semilla
+# Fijar semilla (siempre al final, antes de optimize)
 model.setParam("randomization/randomseedshift", SEMILLA_FIJA)
 model.setParam("randomization/permutationseed", SEMILLA_FIJA)
 model.setParam("randomization/lpseed", SEMILLA_FIJA)
 
+# --- Primera fase de resolución ---
 model.optimize()
+
+# --- Segunda fase solo para modo inteligente ---
+if MODO == "inteligente" and model.getNSols() > 0:
+    tiempo_usado = model.getSolvingTime()
+    tiempo_restante = LIMITE_TIEMPO - tiempo_usado
+
+    if tiempo_restante > 1:
+        print(f"Relanzando con DEFAULT. Tiempo usado: {tiempo_usado:.1f}s, restante: {tiempo_restante:.1f}s")
+        model.setHeuristics(SCIP_PARAMSETTING.DEFAULT)
+        model.setSeparating(SCIP_PARAMSETTING.DEFAULT)
+        model.setPresolve(SCIP_PARAMSETTING.DEFAULT)
+        model.setParam("limits/time", tiempo_restante)
+        if GAP_OBJETIVO is not None:
+            model.setParam("limits/gap", GAP_OBJETIVO)
+        model.optimize()
+    else:
+        print("Tiempo restante insuficiente para segunda fase.")
+
 model.printStatistics()
 
 with open(NOMBRE_LOG, "a") as f:
@@ -91,13 +115,11 @@ with open(NOMBRE_LOG, "a") as f:
     f.write(f"Modo: {MODO}\n")
     status = model.getStatus()
     f.write(f"Estado de la solución: {status}\n")
-
     sol = model.getBestSol()
     if sol is not None:
         f.write(f"Valor de la función objetivo: {model.getObjVal()}\n")
         gap = model.getGap()
         f.write(f"Gap final: {gap*100:.2f}%\n\n" if gap < 1e+20 else "Gap: no disponible\n\n")
-        # Detectar si se alcanzó el gap objetivo
         if GAP_OBJETIVO is not None and gap <= GAP_OBJETIVO:
             f.write("ESTADO: Gap objetivo alcanzado\n")
         f.write("Variables con valor distinto de cero:\n")
@@ -107,5 +129,4 @@ with open(NOMBRE_LOG, "a") as f:
                 f.write(f"{v.name}: {val}\n")
     else:
         f.write("No se encontró ninguna solución factible en el tiempo dado.\n")
-
     f.write("\n" + "="*50 + "\n")
