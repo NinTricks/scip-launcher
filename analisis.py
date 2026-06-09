@@ -30,80 +30,6 @@ print(f"Dataset cargado con éxito.")
 print(f"-> Número total de instancias analizadas: {total_instancias}")
 print(f"-> Registros de ejecución de heurísticas: {len(df_heur)}")
 
-print("\n" + "="*40)
-print("=== ANÁLISIS INTRODUCTORIO ===")
-print("="*40)
-
-analisis_general = df_heur.groupby('mode').agg(
-    Tiempo_Ejecucion_S=('exec_time_s', 'sum'),
-    Tiempo_Setup_S=('setup_time_s', 'sum'),
-    Llamadas_Totales=('calls', 'sum')
-).reindex(modos_orden)
-
-# tiempo total (exec + setup)
-analisis_general['Tiempo_Total_S'] = analisis_general['Tiempo_Ejecucion_S'] + analisis_general['Tiempo_Setup_S']
-analisis_general['Tiempo_Total_Horas'] = analisis_general['Tiempo_Total_S'] / 3600
-
-# media por instancia
-analisis_general['Tiempo_Medio_por_Instancia_S'] = analisis_general['Tiempo_Total_S'] / total_instancias
-analisis_general['Llamadas_Medias_por_Instancia'] = analisis_general['Llamadas_Totales'] / total_instancias
-
-tabla_introduccion = analisis_general[[
-    'Tiempo_Total_Horas', 
-    'Tiempo_Medio_por_Instancia_S', 
-    'Llamadas_Totales', 
-    'Llamadas_Medias_por_Instancia'
-]]
-
-tabla_introduccion.columns = [
-    'Tiempo Total (Horas CPU)', 
-    'Tiempo Medio por Instancia (s)', 
-    'Llamadas Totales (Volumen)', 
-    'Media de llamadas por instancia'
-]
-
-print(tabla_introduccion)
-
-# gráficos
-
-sns.set_theme(style="whitegrid")
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-# tiempo total en horas
-sns.barplot(
-    ax=axes[0],
-    x=tabla_introduccion.index,
-    y=tabla_introduccion['Tiempo Total (Horas CPU)'],
-    hue=tabla_introduccion.index,
-    legend=False,
-    palette=colores_dict,
-    order=modos_orden
-)
-axes[0].set_title("Tiempo ejecutando heurísticas", fontsize=12, pad=10)
-axes[0].set_ylabel("Tiempo (horas de CPU)", fontsize=11)
-axes[0].set_xlabel("Modo de ejecución", fontsize=11)
-
-# Media de llamadas por instancia
-sns.barplot(
-    ax=axes[1],
-    x=tabla_introduccion.index,
-    y=tabla_introduccion['Media de llamadas por instancia'],
-    hue=tabla_introduccion.index,
-    legend=False,
-    palette=colores_dict,
-    order=modos_orden
-)
-axes[1].set_title("Media de llamadas por problema", fontsize=12, pad=10)
-axes[1].set_ylabel("Número de llamadas (Promedio)", fontsize=11)
-axes[1].set_xlabel("Modo de ejecución", fontsize=11)
-
-plt.suptitle("Análisis del esfuerzo", fontsize=14, y=1.02)
-plt.tight_layout()
-ruta_foto = os.path.join(CARPETA_GRAFICAS, "introduccion_heuristics.png")
-plt.savefig(ruta_foto, dpi=300, bbox_inches='tight')
-plt.close()
-
-
 ############################################################## GAP FINAL GRÁFICA
 # cargar los datos y limpiar infinitos
 df = pd.read_csv("resultados_summary.csv")
@@ -404,3 +330,66 @@ plt.tight_layout()
 ruta_foto = os.path.join(CARPETA_GRAFICAS, "proporcion_tiempo_heuristicas.png")
 plt.savefig(ruta_foto, dpi=300)
 plt.close()
+
+
+############################################################## TIEMPO POR MODO
+print("\n" + "="*40)
+print("=== ANÁLISIS DE TIEMPO POR MODO ===")
+print("="*40)
+
+# 1. Cargar el dataset principal
+df_summary = pd.read_csv("resultados_summary.csv")
+
+# 2. Calcular estadísticas de tiempo (en segundos) agrupando por modo
+analisis_tiempo = df_summary.groupby('mode').agg(
+    Instancias=('instance', 'count'),
+    Tiempo_Total_S=('total_time_s', 'sum'),
+    Tiempo_Medio_S=('total_time_s', 'mean'),
+    Mediana_Tiempo_S=('total_time_s', 'median'),
+    Tiempo_Max_S=('total_time_s', 'max')
+).reindex(modos_orden)
+
+# Convertir el tiempo total a horas para dar un dato más legible a nivel global
+analisis_tiempo['Tiempo_Total_Horas'] = analisis_tiempo['Tiempo_Total_S'] / 3600
+
+# Formateamos la salida en consola para que sea fácil de leer
+print("Estadísticas de tiempo de ejecución del solver por modo:\n")
+tabla_imprimir = analisis_tiempo[[
+    'Tiempo_Total_Horas', 
+    'Tiempo_Medio_S', 
+    'Mediana_Tiempo_S', 
+    'Tiempo_Max_S'
+]].copy()
+
+tabla_imprimir.columns = [
+    'Total (Horas)', 
+    'Media (s)', 
+    'Mediana (s)', 
+    'Máximo (s)'
+]
+print(tabla_imprimir.to_string(float_format="{:.2f}".format))
+
+# 3. Generar la visualización (Gráfico de barras del Tiempo Medio)
+plt.figure(figsize=(9, 5))
+
+sns.barplot(
+    x=analisis_tiempo.index,
+    y=analisis_tiempo['Tiempo_Medio_S'],
+    hue=analisis_tiempo.index,
+    legend=False,
+    palette=colores_dict,
+    order=modos_orden
+)
+
+plt.title("Tiempo Medio de Ejecución del Solver por Modo", fontsize=14, pad=15)
+plt.ylabel("Tiempo Medio (segundos)", fontsize=12)
+plt.xlabel("Modo de Ejecución", fontsize=12)
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+# Guardar la gráfica
+ruta_foto_tiempo = os.path.join(CARPETA_GRAFICAS, "tiempo_medio_por_modo.png")
+plt.tight_layout()
+plt.savefig(ruta_foto_tiempo, dpi=300)
+plt.close()
+
+print(f"\n-> Gráfica guardada en: {ruta_foto_tiempo}")
