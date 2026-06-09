@@ -24,10 +24,6 @@ model.setLogfile(NOMBRE_LOG)
 
 model.setParam("limits/time", LIMITE_TIEMPO)
 
-#model.setPresolve(SCIP_PARAMSETTING.OFF)
-#model.setSeparating(SCIP_PARAMSETTING.OFF)
-#model.setHeuristics(SCIP_PARAMSETTING.OFF)
-
 model.setParam("display/freq", 5000)
 model.setParam("display/lpinfo", False)
 

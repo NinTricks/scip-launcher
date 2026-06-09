@@ -31,26 +31,19 @@ print(f"-> Número total de instancias analizadas: {total_instancias}")
 print(f"-> Registros de ejecución de heurísticas: {len(df_heur)}")
 
 ############################################################## GAP FINAL GRÁFICA
-# cargar los datos y limpiar infinitos
 df = pd.read_csv("resultados_summary.csv")
 df['gap_final_pct'] = df['gap_final_pct'].replace([np.inf, -np.inf], np.nan)
 
-# Filtrar problemas infactibles o que no encontraron solución
-# Eliminamos aquellos con primal_bound infinito o que literalmente sean status = 'infeasible'
 df_valid = df[(df['primal_bound'] < 1e19) & (df['status'] != 'infeasible')].copy()
 
 
-# Contamos en cuántos modos tiene solución cada instancia
 conteo_modos = df_valid.groupby('instance')['mode'].nunique()
 
-# Nos quedamos solo con las instancias que tienen solución en los 4 modos
 instancias_comunes = conteo_modos[conteo_modos == 4].index
 df_fair = df_valid[df_valid['instance'].isin(instancias_comunes)]
 
 
 plt.figure(figsize=(10, 6))
-
-# Seaborn para pintar el boxplot
 sns.boxplot(
     x='mode', 
     y='gap_final_pct', 
@@ -65,10 +58,8 @@ plt.title("Comparativa de Gap Final (%) por Modo\n(Intersección estricta de ins
 plt.ylabel("Gap Final (%)", fontsize=12)
 plt.xlabel("Modo de Ejecución", fontsize=12)
 plt.grid(axis='y', linestyle='--', alpha=0.7)
-#plt.yscale('symlog')
 plt.ylim(0, 5)
 
-#plt.tight_layout()
 ruta_foto = os.path.join(CARPETA_GRAFICAS, "boxplot_gap_final.png")
 plt.savefig(ruta_foto, dpi=300)
 plt.close()
@@ -78,7 +69,6 @@ plt.close()
 # 2 decimales
 pd.options.display.float_format = '{:.2f}'.format
 
-# Resumen
 resumen_stats = df_fair.groupby('mode').agg(
     Media_Aritmetica=('gap_final_pct', 'mean'),
     Media_Geometrica=('gap_final_pct', lambda x: shifted_geometric_mean(x, shift=1.0)),
@@ -107,11 +97,9 @@ print("\n" + "="*40)
 print("=== ANÁLISIS DE HEURÍSTICAS ===")
 print("="*40)
 
-# cargar datos
 df_heur = pd.read_csv("resultados_heuristics.csv")
 # no quitamos los malos porque todos los problemas se han esforzado en tirar heurísticas
 
-# sumamos el tiempo de ejecución y configuración por modo
 tiempo_modo = df_heur.groupby('mode').agg(
     Tiempo_Ejecucion_S=('exec_time_s', 'sum'),
     Tiempo_Setup_S=('setup_time_s', 'sum'),
@@ -124,7 +112,6 @@ tiempo_modo['Tiempo_Total_Heur_S'] = tiempo_modo['Tiempo_Ejecucion_S'] + tiempo_
 tiempo_modo['Tiempo_Total_Heur_Horas'] = tiempo_modo['Tiempo_Total_Heur_S'] / 3600
 print(tiempo_modo)
 
-# gráfico
 plt.figure(figsize=(9, 5))
 sns.barplot(
     x=tiempo_modo.index, 
@@ -154,10 +141,8 @@ def p90(x): return x.quantile(0.90)
 
 tabla_tiempos = df.groupby('mode').agg(
     Total_Instancias=('instance', 'count'),
-    # Contamos cuántas terminaron en óptimo y cuántas agotaron el tiempo
     Optimos_Alcanzados=('status', lambda x: (x == 'optimal').sum()),
     Timeouts=('status', lambda x: (x == 'time_limit').sum()),
-    # Distribución del tiempo de ejecución
     Minimo_s=('total_time_s', 'min'),
     Percentil_25_s=('total_time_s', p25),
     Mediana_s=('total_time_s', 'median'),
@@ -337,10 +322,8 @@ print("\n" + "="*40)
 print("=== ANÁLISIS DE TIEMPO POR MODO ===")
 print("="*40)
 
-# 1. Cargar el dataset principal
 df_summary = pd.read_csv("resultados_summary.csv")
 
-# 2. Calcular estadísticas de tiempo (en segundos) agrupando por modo
 analisis_tiempo = df_summary.groupby('mode').agg(
     Instancias=('instance', 'count'),
     Tiempo_Total_S=('total_time_s', 'sum'),
@@ -349,10 +332,8 @@ analisis_tiempo = df_summary.groupby('mode').agg(
     Tiempo_Max_S=('total_time_s', 'max')
 ).reindex(modos_orden)
 
-# Convertir el tiempo total a horas para dar un dato más legible a nivel global
 analisis_tiempo['Tiempo_Total_Horas'] = analisis_tiempo['Tiempo_Total_S'] / 3600
 
-# Formateamos la salida en consola para que sea fácil de leer
 print("Estadísticas de tiempo de ejecución del solver por modo:\n")
 tabla_imprimir = analisis_tiempo[[
     'Tiempo_Total_Horas', 
@@ -369,7 +350,6 @@ tabla_imprimir.columns = [
 ]
 print(tabla_imprimir.to_string(float_format="{:.2f}".format))
 
-# 3. Generar la visualización (Gráfico de barras del Tiempo Medio)
 plt.figure(figsize=(9, 5))
 
 sns.barplot(
@@ -386,7 +366,6 @@ plt.ylabel("Tiempo Medio (segundos)", fontsize=12)
 plt.xlabel("Modo de Ejecución", fontsize=12)
 plt.grid(axis='y', linestyle='--', alpha=0.7)
 
-# Guardar la gráfica
 ruta_foto_tiempo = os.path.join(CARPETA_GRAFICAS, "tiempo_medio_por_modo.png")
 plt.tight_layout()
 plt.savefig(ruta_foto_tiempo, dpi=300)

@@ -60,7 +60,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Parsea flags y argumentos
+	// parsea flags y argumentos
 	secuencial := false
 	var argsRestantes []string
 	for _, arg := range os.Args[1:] {
@@ -71,7 +71,7 @@ func main() {
 		}
 	}
 
-	// Filtra modos si el usuario los pasa como argumento, si no ejecuta todos.
+	// filtra modos si el usuario los pasa como argumento, si no ejecuta todos
 	modos := ModosValidos
 	if len(argsRestantes) > 0 {
 		for _, arg := range argsRestantes {
@@ -88,7 +88,7 @@ func main() {
 	fmt.Printf("Instancias: %d | Modos: %s | Workers: %d\n",
 		len(archivos), strings.Join(modos, ", "), MaxProcesosSimultaneos)
 
-	// Ejecuta cada modo en secuencia (los problemas dentro de cada modo van en paralelo).
+	// ejecuta cada modo en secuencia (los problemas dentro de cada modo van en paralelo)
 	for _, modo := range modos {
 		fmt.Printf("\n▶ Iniciando modo: %s\n", strings.ToUpper(modo))
 		ejecutarBateria(archivos, modo, secuencial)
@@ -101,7 +101,7 @@ func main() {
 // Recopilación de archivos
 // ─────────────────────────────────────────────
 
-// recopilarArchivos busca archivos .lp y .mps en el directorio dado.
+// recopilarArchivos busca archivos .lp y .mps en el directorio
 func recopilarArchivos(dir string) ([]string, error) {
 	var archivos []string
 	for _, patron := range []string{"*.lp", "*.mps", "*.LP", "*.MPS"} {
@@ -111,7 +111,7 @@ func recopilarArchivos(dir string) ([]string, error) {
 		}
 		archivos = append(archivos, matches...)
 	}
-	// Elimina duplicados (por si el sistema de ficheros no distingue mayúsculas).
+	// elimina duplicados (por si el sistema de ficheros no distingue mayúsculas, windows va por ti)
 	archivos = deduplicar(archivos)
 	sort.Strings(archivos)
 	return archivos, nil
@@ -153,7 +153,7 @@ func ejecutarBateria(archivos []string, modo string, secuencial bool) []Resultad
 		wg.Add(1)
 		cpuID := id % (numCPU / 2) // garantiza que el ID de CPU es siempre válido
 		// tira por las CPUS pares (intención de mejorar
-		// fallos en cache
+		// fallos en cache)
 		go func(workerID, cpu int) {
 			defer wg.Done()
 			for archivo := range tareas {
@@ -168,11 +168,11 @@ func ejecutarBateria(archivos []string, modo string, secuencial bool) []Resultad
 	}
 	close(tareas)
 
-	// Espera a que todos los workers terminen antes de cerrar el canal.
+	// Espera a que todos los workers terminen antes de cerrar el canal
 	wg.Wait()
 	close(resultadosCh)
 
-	// Recoge resultados en un slice (evita depender del buffer del canal).
+	// Recoge resultados
 	var resultados []ResultadoProblema
 	for r := range resultadosCh {
 		resultados = append(resultados, r)
@@ -222,7 +222,7 @@ func ejecutarTarea(workerID, cpuID int, rutaArchivo, modo string, secuencial boo
 }
 
 // formatDuracion devuelve una representación compacta de una duración:
-// segundos con un decimal si es menor de un minuto, o "Xm Ys" en caso contrario.
+// segundos con un decimal si es menor de un minuto, o "Xm Ys" en caso contrario
 func formatDuracion(d time.Duration) string {
 	if d < time.Minute {
 		return fmt.Sprintf("%.1fs", d.Seconds())
@@ -299,9 +299,6 @@ func parsearSalida(archivo, modo, texto string) ResultadoProblema {
 	return r
 }
 
-// parsearHeuristicas extrae la tabla "Primal Heuristics" de la salida de SCIP.
-// Usa el patrón de cabecera para entrar en la sección y detección robusta de fin:
-// cualquier línea no vacía que no encaje con el regex de fila termina la sección.
 func parsearHeuristicas(texto string) []HeuristicaStat {
 	var heurísticas []HeuristicaStat
 	enSeccion := false
@@ -321,7 +318,7 @@ func parsearHeuristicas(texto string) []HeuristicaStat {
 
 		m := reHeur.FindStringSubmatch(linea)
 		if m == nil {
-			// Primera línea no vacía que no encaja → fin de la sección
+			// Primera línea no vacía que no encaja, fin de la sección
 			break
 		}
 
